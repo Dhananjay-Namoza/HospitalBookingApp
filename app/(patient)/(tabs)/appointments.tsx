@@ -11,51 +11,45 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-import { mockAppointments } from '../../../data/mockData';
+import { useAppointments } from '../../../context/AppointmentContext';
 
 export default function PatientAppointmentsScreen() {
   const { user } = useUser();
-  const [appointments, setAppointments] = useState([]);
+  const { appointments: allAppointments, updateAppointment, loadData } = useAppointments();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadAppointments();
-  }, []);
-
-  const loadAppointments = () => {
-    const userAppointments = mockAppointments.filter(apt => apt.patientId === user?.id);
-    setAppointments(userAppointments);
-  };
+  const userAppointments = allAppointments.filter(apt => apt.patientId === user?.id);
 
   const filterAppointments = () => {
     const today = new Date().toISOString().split('T')[0];
+    const currentTime = new Date().toTimeString().slice(0,5);
     
     if (activeTab === 'upcoming') {
-      return appointments.filter(apt => 
-        (apt.date > today || (apt.date === today && apt.time > new Date().toTimeString().slice(0,5))) && 
-        apt.status !== 'cancelled'
-      );
+      return userAppointments.filter(apt => {
+        const isUpcoming = apt.date > today || (apt.date === today && apt.time > currentTime);
+        return isUpcoming && apt.status !== 'cancelled' && apt.status !== 'completed';
+      });
     } else if (activeTab === 'past') {
-      return appointments.filter(apt => 
-        (apt.date < today || (apt.date === today && apt.time <= new Date().toTimeString().slice(0,5))) || 
-        apt.status === 'completed'
-      );
+      return userAppointments.filter(apt => {
+        const isPast = apt.date < today || (apt.date === today && apt.time <= currentTime);
+        return (isPast && apt.status !== 'cancelled') || apt.status === 'completed';
+      });
     } else {
-      return appointments.filter(apt => apt.status === 'cancelled');
+      return userAppointments.filter(apt => apt.status === 'cancelled');
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await loadData();
     setTimeout(() => {
-      loadAppointments();
       setRefreshing(false);
-    }, 1000);
+    }, 500);
   };
 
   const handleReschedule = (appointmentId) => {
-    const appointment = appointments.find(apt => apt.id === appointmentId);
+    const appointment = userAppointments.find(apt => apt.id === appointmentId);
     Alert.alert(
       'Reschedule Appointment',
       `Do you want to reschedule your appointment with ${appointment.doctorName}?`,
@@ -77,7 +71,7 @@ export default function PatientAppointmentsScreen() {
     );
   };
 
-  const handleCancel = (appointmentId) => {
+  const handleCancel = async (appointmentId) => {
     Alert.alert(
       'Cancel Appointment',
       'Are you sure you want to cancel this appointment?',
@@ -86,14 +80,8 @@ export default function PatientAppointmentsScreen() {
         {
           text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => {
-            setAppointments(prev =>
-              prev.map(apt =>
-                apt.id === appointmentId
-                  ? { ...apt, status: 'cancelled' }
-                  : apt
-              )
-            );
+          onPress: async () => {
+            await updateAppointment(appointmentId, { status: 'cancelled' });
           }
         }
       ]
@@ -216,19 +204,19 @@ export default function PatientAppointmentsScreen() {
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {appointments.filter(a => a.status === 'upcoming').length}
+            {userAppointments.filter(a => a.status === 'upcoming' || (a.status !== 'cancelled' && a.status !== 'completed')).length}
           </Text>
           <Text style={styles.statLabel}>Upcoming</Text>
         </View>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {appointments.filter(a => a.status === 'completed').length}
+            {userAppointments.filter(a => a.status === 'completed').length}
           </Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {appointments.filter(a => a.status === 'cancelled').length}
+            {userAppointments.filter(a => a.status === 'cancelled').length}
           </Text>
           <Text style={styles.statLabel}>Cancelled</Text>
         </View>
@@ -496,4 +484,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

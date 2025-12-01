@@ -13,11 +13,13 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { useUser } from '../../context/UserContext';
-import { mockDoctors, mockDoctorAvailability, mockAppointments } from '../../data/mockData';
+import { useAppointments } from '../../context/AppointmentContext';
+import { mockDoctors, mockDoctorAvailability } from '../../data/mockData';
 
 export default function BookAppointmentScreen() {
   const { doctorId } = useLocalSearchParams();
   const { user } = useUser();
+  const { appointments, addAppointment } = useAppointments();
   const [doctor, setDoctor] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
@@ -40,12 +42,13 @@ export default function BookAppointmentScreen() {
 
   const generateAvailableSlots = () => {
     const availability = mockDoctorAvailability[doctor.id];
+    console.log('Doctor Availability:', availability);
     if (!availability) return;
-
+    console.log('Selected Date:', selectedDate);
     const dayOfWeek = getDayOfWeek(selectedDate);
     const daySchedule = availability.workingHours[dayOfWeek];
 
-    if (!daySchedule || !daySchedule.available !== false) {
+    if (!daySchedule || daySchedule.available === false) {
       setAvailableSlots([]);
       return;
     }
@@ -106,7 +109,7 @@ export default function BookAppointmentScreen() {
     if (unavailablePeriod) return false;
 
     // Check existing appointments
-    const existingAppointment = mockAppointments.find(apt => 
+    const existingAppointment = appointments.find(apt => 
       apt.doctorId === doctor.id && 
       apt.date === date && 
       apt.time === time && 
@@ -159,10 +162,9 @@ export default function BookAppointmentScreen() {
     
     try {
       // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       const newAppointment = {
-        id: Date.now(),
         patientId: user.id,
         patientName: user.name,
         doctorId: doctor.id,
@@ -181,20 +183,24 @@ export default function BookAppointmentScreen() {
         rescheduledBy: null
       };
 
-      // Add to mock appointments
-      mockAppointments.push(newAppointment);
+      // Add to appointments context
+      const success = await addAppointment(newAppointment);
       
-      setShowConfirmModal(false);
-      Alert.alert(
-        'Booking Confirmed!',
-        `Your appointment with ${doctor.name} is booked for ${selectedDate} at ${selectedTime}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.push('/(patient)/(tabs)/appointments')
-          }
-        ]
-      );
+      if (success) {
+        setShowConfirmModal(false);
+        Alert.alert(
+          'Booking Confirmed! ✅',
+          `Your appointment with ${doctor.name} is booked for ${selectedDate} at ${selectedTime}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => router.push('/(patient)/(tabs)/appointments')
+            }
+          ]
+        );
+      } else {
+        throw new Error('Failed to save appointment');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to book appointment. Please try again.');
     } finally {

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { UserProvider } from '../context/UserContext';
+import { AppointmentProvider } from '../context/AppointmentContext';
 import { LogBox } from 'react-native';
 
 // Suppress development warnings for demo
@@ -26,13 +27,16 @@ if (__DEV__) {
 export default function RootLayout() {
   return (
     <UserProvider>
-      <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="auth" options={{ headerShown: false }} />
-        <Stack.Screen name="(patient)" options={{ headerShown: false }} />
-        <Stack.Screen name="(doctor)" options={{ headerShown: false }} />
-      </Stack>
+      <AppointmentProvider>
+        <StatusBar style="auto" />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="auth" options={{ headerShown: false }} />
+          <Stack.Screen name="(patient)" options={{ headerShown: false }} />
+          <Stack.Screen name="(doctor)" options={{ headerShown: false }} />
+          <Stack.Screen name="(reception)" options={{ headerShown: false }} />
+        </Stack>
+      </AppointmentProvider>
     </UserProvider>
   );
 }
