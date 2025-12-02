@@ -489,7 +489,7 @@ export const mockAppointments = [
     fee: 500,
     symptoms: 'Chest pain and difficulty breathing',
     notes: 'Follow-up required in 1 week',
-    bookingTime: '2024-12-15T09:30:00Z',
+    bookingTime: '2026-01-15T09:30:00Z',
     isRescheduled: false,
     originalDate: null,
     rescheduledBy: null
@@ -508,7 +508,7 @@ export const mockAppointments = [
     fee: 800,
     symptoms: 'Diabetes check-up',
     notes: 'Blood sugar levels monitoring',
-    bookingTime: '2024-12-16T14:20:00Z',
+    bookingTime: '2026-01-16T14:20:00Z',
     isRescheduled: false,
     originalDate: null,
     rescheduledBy: null
