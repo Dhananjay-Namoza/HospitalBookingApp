@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ]
+, "app/(doctor)/(tabs)/_layout.js", "app/(doctor)/(tabs)/chats.js", "app/(doctor)/(tabs)/appointments.js", "app/(doctor)/(tabs)/patients.js", "app/(doctor)/(tabs)/profile.js", "app/(doctor)/chat/[id].js", "app/(doctor)/_layout.js", "app/(doctor)/index.js", "app/(doctor)/manage-availability.js", "app/(doctor)/patient-detail.js", "app/(patient)/(tabs)/_layout.js", "app/(patient)/(tabs)/appointments.js", "app/(patient)/(tabs)/chats.js", "app/(patient)/(tabs)/home.js", "app/(patient)/(tabs)/profile.js", "app/(patient)/chat/[id].js", "app/(patient)/_layout.js", "app/(patient)/book-appointment.js", "app/(patient)/doctor-detail.js", "app/(reception)/(tabs)/messages.js", "app/(reception)/_layout.js", "app/auth/_layout.js", "app/auth/forgot-password.js", "app/auth/login.js", "app/auth/otp-verification.js", "app/auth/signup.js", "app/_layout.js", "app/index.js", "components/EmptyState/EmptyState.js", "components/Skeletons/SkeletonLoader.js", "components/Toast/ToastContext.js", "components/LoadingScreen.js", "context/AppointmentContext.js", "context/UserContext.js", "data/mockData.js", "utils/storage.js"  ]
 }
