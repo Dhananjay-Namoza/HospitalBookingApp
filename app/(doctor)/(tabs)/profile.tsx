@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-
+import ApiService from '../../../services/api.service';
 export default function DoctorProfileScreen() {
   const { user, setUser, logout } = useUser();
   const [editing, setEditing] = useState(false);
@@ -28,19 +28,54 @@ export default function DoctorProfileScreen() {
   });
   const [availableForConsultation, setAvailableForConsultation] = useState(true);
   const [acceptNewPatients, setAcceptNewPatients] = useState(true);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const handleSave = () => {
-    const updatedUser = {
-      ...user,
-      ...formData,
-      experience: parseInt(formData.experience) || 0,
-    };
-    
-    setUser(updatedUser);
-    setEditing(false);
-    Alert.alert('Success', 'Profile updated successfully!');
+  const showError = (message: string) => {
+    Alert.alert('Error', message);
   };
+  const success = (message: string) => {
+    Alert.alert('Success', message);
+  };
+  const handleSave = async () => {
+  try {
+    setLoading(true);
+    const updates = {
+      name: formData.name,
+      phone: formData.phone,
+      speciality: formData.speciality,
+      experience: parseInt(formData.experience),
+      qualification: formData.qualification,
+      hospitalName: formData.hospitalName,
+      address: formData.address,
+    };
 
+    const response = await ApiService.updateProfile(updates);
+    
+    if (response.success) {
+      setUser(response.user);
+      setEditing(false);
+      success('Profile updated successfully!');
+    }
+  } catch (err) {
+    showError('Failed to update profile');
+  } finally {
+    setLoading(false);
+  }
+};
+  useEffect(() => {
+  loadProfile();
+}, []);
+const loadProfile = async () => {
+  try {
+    const response = await ApiService.getProfile();
+    if (response.success && response.user) {
+      setUser(response.user);
+      // Update form data
+    }
+  } catch (err) {
+    console.error('Error loading profile:', err);
+  }
+};
   const handleLogout = () => {
     Alert.alert(
       'Logout',

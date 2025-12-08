@@ -7,20 +7,25 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-  Modal
+  Modal,
+  ActivityIndicator
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { useUser } from '../../context/UserContext';
-import { useAppointments } from '../../context/AppointmentContext';
-import { mockDoctors, mockDoctorAvailability } from '../../data/mockData';
+// import { useToast } from '../../components/Toast/ToastContext';
+import ApiService from '../../services/api.service';
 
 export default function BookAppointmentScreen() {
   const { doctorId } = useLocalSearchParams();
   const { user } = useUser();
-  const { appointments, addAppointment } = useAppointments();
+  // const { success, error: showError } = useToast();
+  const success = (msg: string) => Alert.alert('Success', msg);
+  const showError = (msg: string) => Alert.alert('Error', msg);
+  const info = (msg: string) => Alert.alert('Info', msg);
   const [doctor, setDoctor] = useState(null);
+  const [availability, setAvailability] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [availableSlots, setAvailableSlots] = useState([]);
@@ -28,23 +33,44 @@ export default function BookAppointmentScreen() {
   const [appointmentType, setAppointmentType] = useState('Consultation');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fetchingData, setFetchingData] = useState(true);
 
   useEffect(() => {
-    const foundDoctor = mockDoctors.find(d => d.id === parseInt(doctorId as string));
-    setDoctor(foundDoctor);
+    loadDoctorData();
   }, []);
 
   useEffect(() => {
-    if (selectedDate && doctor) {
+    if (selectedDate && availability) {
       generateAvailableSlots();
     }
-  }, [selectedDate, doctor]);
+  }, [selectedDate, availability]);
+
+  const loadDoctorData = async () => {
+    try {
+      setFetchingData(true);
+      const [doctorResponse, availabilityResponse] = await Promise.all([
+        ApiService.getDoctorById(parseInt(doctorId as string)),
+        ApiService.getDoctorAvailability(parseInt(doctorId as string))
+      ]);
+
+      if (doctorResponse.success && doctorResponse.doctor) {
+        setDoctor(doctorResponse.doctor);
+      }
+
+      if (availabilityResponse.success && availabilityResponse.availability) {
+        setAvailability(availabilityResponse.availability);
+      }
+    } catch (err: any) {
+      console.error('Error loading doctor data:', err);
+      showError(err.message || 'Failed to load doctor information');
+    } finally {
+      setFetchingData(false);
+    }
+  };
 
   const generateAvailableSlots = () => {
-    const availability = mockDoctorAvailability[doctor.id];
-    console.log('Doctor Availability:', availability);
-    if (!availability) return;
-    console.log('Selected Date:', selectedDate);
+    if (!availability || !selectedDate) return;
+
     const dayOfWeek = getDayOfWeek(selectedDate);
     const daySchedule = availability.workingHours[dayOfWeek];
 
@@ -54,7 +80,7 @@ export default function BookAppointmentScreen() {
     }
 
     // Check if date is unavailable
-    if (availability.unavailableDates.includes(selectedDate)) {
+    if (availability.unavailableDates?.includes(selectedDate)) {
       setAvailableSlots([]);
       return;
     }
@@ -75,14 +101,11 @@ export default function BookAppointmentScreen() {
       const minute = currentTime % 60;
       const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
       
-      // Check if slot is available
-      if (isSlotAvailable(selectedDate, timeString)) {
-        slots.push({
-          time: timeString,
-          available: true,
-          endTime: getEndTime(timeString, slotDuration)
-        });
-      }
+      slots.push({
+        time: timeString,
+        available: true,
+        endTime: getEndTime(timeString, slotDuration)
+      });
       
       currentTime += slotDuration;
     }
@@ -96,29 +119,6 @@ export default function BookAppointmentScreen() {
     return days[date.getDay()];
   };
 
-  const isSlotAvailable = (date, time) => {
-    const availability = mockDoctorAvailability[doctor.id];
-    
-    // Check unavailable periods
-    const unavailablePeriod = availability.unavailablePeriods.find(period => 
-      period.date === date && 
-      time >= period.startTime && 
-      time < period.endTime
-    );
-
-    if (unavailablePeriod) return false;
-
-    // Check existing appointments
-    const existingAppointment = appointments.find(apt => 
-      apt.doctorId === doctor.id && 
-      apt.date === date && 
-      apt.time === time && 
-      apt.status !== 'cancelled'
-    );
-
-    return !existingAppointment;
-  };
-
   const getEndTime = (startTime, duration) => {
     const [hour, minute] = startTime.split(':').map(Number);
     const totalMinutes = hour * 60 + minute + duration;
@@ -128,7 +128,6 @@ export default function BookAppointmentScreen() {
   };
 
   const getMarkedDates = () => {
-    const availability = mockDoctorAvailability[doctor?.id];
     if (!availability) return {};
 
     const marked = {};
@@ -137,7 +136,7 @@ export default function BookAppointmentScreen() {
     thirtyDaysFromNow.setDate(today.getDate() + 30);
 
     // Mark unavailable dates
-    availability.unavailableDates.forEach(date => {
+    availability.unavailableDates?.forEach(date => {
       marked[date] = { disabled: true, disableTouchEvent: true };
     });
 
@@ -161,32 +160,20 @@ export default function BookAppointmentScreen() {
     setLoading(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const newAppointment = {
-        patientId: user.id,
-        patientName: user.name,
+      const appointmentData = {
         doctorId: doctor.id,
         doctorName: doctor.name,
         date: selectedDate,
         time: selectedTime,
-        endTime: getEndTime(selectedTime, mockDoctorAvailability[doctor.id].workingHours.monday.slots),
+        endTime: getEndTime(selectedTime, availability?.workingHours?.monday?.slots || 30),
         type: appointmentType,
-        status: 'upcoming',
-        fee: mockDoctorAvailability[doctor.id].consultationFee,
-        symptoms,
-        notes: '',
-        bookingTime: new Date().toISOString(),
-        isRescheduled: false,
-        originalDate: null,
-        rescheduledBy: null
+        symptoms: symptoms.trim(),
+        fee: availability?.consultationFee || 500,
       };
 
-      // Add to appointments context
-      const success = await addAppointment(newAppointment);
-      
-      if (success) {
+      const response = await ApiService.createAppointment(appointmentData);
+
+      if (response.success) {
         setShowConfirmModal(false);
         Alert.alert(
           'Booking Confirmed! ✅',
@@ -199,19 +186,30 @@ export default function BookAppointmentScreen() {
           ]
         );
       } else {
-        throw new Error('Failed to save appointment');
+        throw new Error(response.message || 'Failed to book appointment');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to book appointment. Please try again.');
+    } catch (err: any) {
+      console.error('Booking error:', err);
+      Alert.alert('Error', err.message || 'Failed to book appointment. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  if (fetchingData) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
+        <Text style={styles.loadingText}>Loading doctor information...</Text>
+      </View>
+    );
+  }
+
   if (!doctor) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Loading doctor information...</Text>
+        <Ionicons name="alert-circle-outline" size={50} color="#f44336" />
+        <Text style={styles.errorText}>Doctor not found</Text>
       </View>
     );
   }
@@ -226,7 +224,7 @@ export default function BookAppointmentScreen() {
             <Text style={styles.doctorName}>{doctor.name}</Text>
             <Text style={styles.doctorSpeciality}>{doctor.speciality}</Text>
             <Text style={styles.consultationFee}>
-              Consultation Fee: ₹{mockDoctorAvailability[doctor.id]?.consultationFee || 500}
+              Consultation Fee: ₹{availability?.consultationFee || 500}
             </Text>
           </View>
         </View>
@@ -364,7 +362,7 @@ export default function BookAppointmentScreen() {
               <View style={styles.confirmRow}>
                 <Text style={styles.confirmLabel}>Fee:</Text>
                 <Text style={styles.confirmValue}>
-                  ₹{mockDoctorAvailability[doctor.id]?.consultationFee || 500}
+                  ₹{availability?.consultationFee || 500}
                 </Text>
               </View>
             </View>
@@ -373,6 +371,7 @@ export default function BookAppointmentScreen() {
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setShowConfirmModal(false)}
+                disabled={loading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -381,9 +380,11 @@ export default function BookAppointmentScreen() {
                 onPress={handleBookAppointment}
                 disabled={loading}
               >
-                <Text style={styles.confirmButtonText}>
-                  {loading ? 'Booking...' : 'Confirm'}
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -402,6 +403,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 16,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#f44336',
+    marginTop: 10,
   },
   doctorCard: {
     backgroundColor: '#fff',

@@ -12,6 +12,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mockDoctors, mockReviews } from '../../data/mockData';
+import ApiService from './../../services/api.service';
 
 export default function DoctorDetailScreen() {
   const { doctorId } = useLocalSearchParams();
@@ -24,15 +25,23 @@ export default function DoctorDetailScreen() {
     loadDoctorData();
   }, []);
 
-  const loadDoctorData = () => {
-    const foundDoctor = mockDoctors.find(d => d.id === parseInt(doctorId as string));
-    const doctorReviews = mockReviews[parseInt(doctorId as string)] || [];
+  const loadDoctorData = async () => {
+  try {
+    setLoading(true);
+    const [doctorResponse, reviewsResponse] = await Promise.all([
+      ApiService.getDoctorById(parseInt(doctorId as string)),
+      // Reviews can be fetched if API endpoint exists
+    ]);
     
-    setDoctor(foundDoctor);
-    setReviews(doctorReviews);
+    if (doctorResponse.success && doctorResponse.doctor) {
+      setDoctor(doctorResponse.doctor);
+    }
+  } catch (err) {
+    console.error('Error loading doctor data:', err);
+  } finally {
     setLoading(false);
-  };
-
+  }
+};
   const handleCall = () => {
     if (doctor?.phone) {
       Linking.openURL(`tel:${doctor.phone}`);

@@ -7,15 +7,22 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Switch
+  Switch,
+  ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
+// import { useToast } from '../../../components/Toast/ToastContext';
+import ApiService from '../../../services/api.service';
 
 export default function ProfileScreen() {
   const { user, setUser, logout } = useUser();
+  // const { success, error: showError } = useToast();
+  const success = (msg: string) => Alert.alert('Success', msg);
+  const showError = (msg: string) => Alert.alert('Error', msg);
   const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -27,17 +34,58 @@ export default function ProfileScreen() {
   });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
-  const handleSave = () => {
-    const updatedUser = {
-      ...user,
-      ...formData,
-      allergies: formData.allergies.split(',').map(item => item.trim()).filter(item => item),
-      diseases: formData.diseases.split(',').map(item => item.trim()).filter(item => item),
-    };
-    
-    setUser(updatedUser);
-    setEditing(false);
-    Alert.alert('Success', 'Profile updated successfully!');
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      const response = await ApiService.getProfile();
+      if (response.success && response.user) {
+        setUser(response.user);
+        setFormData({
+          name: response.user.name || '',
+          email: response.user.email || '',
+          phone: response.user.phone || '',
+          bloodGroup: response.user.bloodGroup || '',
+          emergencyContact: response.user.emergencyContact || '',
+          allergies: response.user.allergies?.join(', ') || '',
+          diseases: response.user.diseases?.join(', ') || '',
+        });
+      }
+    } catch (err: any) {
+      console.error('Error loading profile:', err);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      
+      const updates = {
+        name: formData.name,
+        phone: formData.phone,
+        bloodGroup: formData.bloodGroup,
+        emergencyContact: formData.emergencyContact,
+        allergies: formData.allergies.split(',').map(item => item.trim()).filter(item => item),
+        diseases: formData.diseases.split(',').map(item => item.trim()).filter(item => item),
+      };
+
+      const response = await ApiService.updateProfile(updates);
+      
+      if (response.success) {
+        setUser(response.user);
+        setEditing(false);
+        success('Profile updated successfully!');
+      } else {
+        throw new Error(response.message || 'Failed to update profile');
+      }
+    } catch (err: any) {
+      console.error('Error updating profile:', err);
+      showError(err.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -79,7 +127,7 @@ export default function ProfileScreen() {
         value={value}
         onChangeText={(text) => setFormData(prev => ({ ...prev, [key]: text }))}
         placeholder={placeholder}
-        editable={editing}
+        editable={editing && !loading}
         multiline={multiline}
         numberOfLines={multiline ? 3 : 1}
       />
@@ -214,7 +262,6 @@ export default function ProfileScreen() {
               style={[styles.button, styles.cancelButton]}
               onPress={() => {
                 setEditing(false);
-                // Reset form data
                 setFormData({
                   name: user?.name || '',
                   email: user?.email || '',
@@ -225,14 +272,20 @@ export default function ProfileScreen() {
                   diseases: user?.diseases?.join(', ') || '',
                 });
               }}
+              disabled={loading}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.button, styles.saveButton]}
+              style={[styles.button, styles.saveButton, loading && styles.buttonDisabled]}
               onPress={handleSave}
+              disabled={loading}
             >
-              <Text style={styles.saveButtonText}>Save Changes</Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              )}
             </TouchableOpacity>
           </View>
         ) : (
@@ -248,6 +301,7 @@ export default function ProfileScreen() {
         <TouchableOpacity 
           style={[styles.button, styles.logoutButton]}
           onPress={handleLogout}
+          disabled={loading}
         >
           <Ionicons name="log-out-outline" size={20} color="#f44336" />
           <Text style={styles.logoutButtonText}>Logout</Text>
@@ -409,6 +463,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     marginBottom: 10,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   editButton: {
     backgroundColor: '#E3F2FD',

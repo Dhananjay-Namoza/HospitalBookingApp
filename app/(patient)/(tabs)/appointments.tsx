@@ -11,45 +11,75 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-import { useAppointments } from '../../../context/AppointmentContext';
+// import { useToast } from '../../../components/Toast/ToastContext';
+import { AppointmentCardSkeleton } from '../../../components/Skeletons/SkeletonLoader';
+import { EmptyState } from '../../../components/EmptyState/EmptyState';
+import ApiService from '../../../services/api.service';
 
 export default function PatientAppointmentsScreen() {
   const { user } = useUser();
-  const { appointments: allAppointments, updateAppointment, loadData } = useAppointments();
+  // const { success, error: showError, info } = useToast();
+  const [appointments, setAppointments] = useState([]);
   const [activeTab, setActiveTab] = useState('upcoming');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const success = (msg: string) => Alert.alert('Success', msg);
+  const showError = (msg: string) => Alert.alert('Error', msg);
+  const info = (msg: string) => Alert.alert('Info', msg);
+  useEffect(() => {
+    loadAppointments();
+  }, []);
 
-  const userAppointments = allAppointments.filter(apt => apt.patientId === user?.id);
+  const loadAppointments = async () => {
+    try {
+      setLoading(true);
+      const response = await ApiService.getAppointments();
+      
+      if (response.success && response.appointments) {
+        setAppointments(response.appointments);
+      } else {
+        throw new Error(response.message || 'Failed to load appointments');
+      }
+    } catch (err: any) {
+      console.error('Error loading appointments:', err);
+      showError(err.message || 'Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filterAppointments = () => {
     const today = new Date().toISOString().split('T')[0];
-    const currentTime = new Date().toTimeString().slice(0,5);
+    const currentTime = new Date().toTimeString().slice(0, 5);
     
     if (activeTab === 'upcoming') {
-      return userAppointments.filter(apt => {
+      return appointments.filter(apt => {
         const isUpcoming = apt.date > today || (apt.date === today && apt.time > currentTime);
         return isUpcoming && apt.status !== 'cancelled' && apt.status !== 'completed';
       });
     } else if (activeTab === 'past') {
-      return userAppointments.filter(apt => {
+      return appointments.filter(apt => {
         const isPast = apt.date < today || (apt.date === today && apt.time <= currentTime);
         return (isPast && apt.status !== 'cancelled') || apt.status === 'completed';
       });
     } else {
-      return userAppointments.filter(apt => apt.status === 'cancelled');
+      return appointments.filter(apt => apt.status === 'cancelled');
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
-    setTimeout(() => {
+    try {
+      await loadAppointments();
+      success('Appointments refreshed');
+    } catch (err) {
+      showError('Failed to refresh');
+    } finally {
       setRefreshing(false);
-    }, 500);
+    }
   };
 
-  const handleReschedule = (appointmentId) => {
-    const appointment = userAppointments.find(apt => apt.id === appointmentId);
+  const handleReschedule = (appointment) => {
     Alert.alert(
       'Reschedule Appointment',
       `Do you want to reschedule your appointment with ${appointment.doctorName}?`,
@@ -58,11 +88,12 @@ export default function PatientAppointmentsScreen() {
         {
           text: 'Reschedule',
           onPress: () => {
+            info('Redirecting to reschedule...');
             router.push({
               pathname: '/(patient)/book-appointment',
               params: { 
                 doctorId: appointment.doctorId,
-                rescheduleId: appointmentId 
+                rescheduleId: appointment.id 
               }
             });
           }
@@ -71,7 +102,7 @@ export default function PatientAppointmentsScreen() {
     );
   };
 
-  const handleCancel = async (appointmentId) => {
+  const handleCancel = async (appointmentId: number) => {
     Alert.alert(
       'Cancel Appointment',
       'Are you sure you want to cancel this appointment?',
@@ -81,19 +112,29 @@ export default function PatientAppointmentsScreen() {
           text: 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
-            await updateAppointment(appointmentId, { status: 'cancelled' });
+            try {
+              const response = await ApiService.cancelAppointment(appointmentId);
+              
+              if (response.success) {
+                success('Appointment cancelled successfully');
+                await loadAppointments();
+              } else {
+                throw new Error(response.message || 'Failed to cancel appointment');
+              }
+            } catch (err: any) {
+              showError(err.message || 'Failed to cancel appointment');
+            }
           }
         }
       ]
     );
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'upcoming': return '#2196F3';
       case 'completed': return '#4CAF50';
       case 'cancelled': return '#f44336';
-      case 'rescheduled': return '#FF9800';
       default: return '#666';
     }
   };
@@ -134,7 +175,7 @@ export default function PatientAppointmentsScreen() {
         <View style={styles.appointmentActions}>
           <TouchableOpacity
             style={[styles.actionButton, styles.rescheduleButton]}
-            onPress={() => handleReschedule(item.id)}
+            onPress={() => handleReschedule(item)}
           >
             <Ionicons name="calendar-outline" size={16} color="#FF9800" />
             <Text style={styles.rescheduleButtonText}>Reschedule</Text>
@@ -153,10 +194,13 @@ export default function PatientAppointmentsScreen() {
         <View style={styles.appointmentActions}>
           <TouchableOpacity
             style={[styles.actionButton, styles.bookAgainButton]}
-            onPress={() => router.push({
-              pathname: '/(patient)/book-appointment',
-              params: { doctorId: item.doctorId }
-            })}
+            onPress={() => {
+              info('Redirecting to book appointment...');
+              router.push({
+                pathname: '/(patient)/book-appointment',
+                params: { doctorId: item.doctorId }
+              });
+            }}
           >
             <Ionicons name="add-circle-outline" size={16} color="#2196F3" />
             <Text style={styles.bookAgainButtonText}>Book Again</Text>
@@ -166,33 +210,49 @@ export default function PatientAppointmentsScreen() {
     </View>
   );
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons
-        name={activeTab === 'upcoming' ? 'calendar-outline' : 
-              activeTab === 'past' ? 'checkmark-circle-outline' : 'close-circle-outline'}
-        size={60}
-        color="#ccc"
+  const renderEmptyState = () => {
+    const emptyStates = {
+      upcoming: {
+        icon: 'calendar-outline',
+        title: 'No Upcoming Appointments',
+        description: 'Book your first appointment with our experienced doctors',
+        actionText: 'Find Doctors',
+        action: () => router.push('/(patient)/(tabs)/home')
+      },
+      past: {
+        icon: 'checkmark-circle-outline',
+        title: 'No Past Appointments',
+        description: 'Your completed appointments will appear here',
+        actionText: null,
+        action: null
+      },
+      cancelled: {
+        icon: 'close-circle-outline',
+        title: 'No Cancelled Appointments',
+        description: 'Your cancelled appointments will appear here',
+        actionText: null,
+        action: null
+      }
+    };
+
+    const state = emptyStates[activeTab];
+    
+    return (
+      <EmptyState
+        icon={state.icon}
+        title={state.title}
+        description={state.description}
+        actionText={state.actionText}
+        onAction={state.action}
       />
-      <Text style={styles.emptyTitle}>
-        {activeTab === 'upcoming' ? 'No Upcoming Appointments' :
-         activeTab === 'past' ? 'No Past Appointments' : 'No Cancelled Appointments'}
-      </Text>
-      <Text style={styles.emptySubtitle}>
-        {activeTab === 'upcoming' ? 
-          'Book your first appointment with our experienced doctors' :
-          activeTab === 'past' ?
-          'Your completed appointments will appear here' :
-          'Your cancelled appointments will appear here'}
-      </Text>
-      {activeTab === 'upcoming' && (
-        <TouchableOpacity
-          style={styles.bookNowButton}
-          onPress={() => router.push('/(patient)/(tabs)')}
-        >
-          <Text style={styles.bookNowButtonText}>Find Doctors</Text>
-        </TouchableOpacity>
-      )}
+    );
+  };
+
+  const renderSkeletonLoader = () => (
+    <View style={styles.listContainer}>
+      <AppointmentCardSkeleton />
+      <AppointmentCardSkeleton />
+      <AppointmentCardSkeleton />
     </View>
   );
 
@@ -204,19 +264,19 @@ export default function PatientAppointmentsScreen() {
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {userAppointments.filter(a => a.status === 'upcoming' || (a.status !== 'cancelled' && a.status !== 'completed')).length}
+            {appointments.filter(a => a.status === 'upcoming' || (a.status !== 'cancelled' && a.status !== 'completed')).length}
           </Text>
           <Text style={styles.statLabel}>Upcoming</Text>
         </View>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {userAppointments.filter(a => a.status === 'completed').length}
+            {appointments.filter(a => a.status === 'completed').length}
           </Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {userAppointments.filter(a => a.status === 'cancelled').length}
+            {appointments.filter(a => a.status === 'cancelled').length}
           </Text>
           <Text style={styles.statLabel}>Cancelled</Text>
         </View>
@@ -238,24 +298,28 @@ export default function PatientAppointmentsScreen() {
       </View>
 
       {/* Appointments List */}
-      <FlatList
-        data={filteredAppointments}
-        renderItem={renderAppointmentCard}
-        keyExtractor={(item) => item.id.toString()}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#2196F3']}
-          />
-        }
-        contentContainerStyle={[
-          styles.listContainer,
-          filteredAppointments.length === 0 && styles.emptyList
-        ]}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        renderSkeletonLoader()
+      ) : (
+        <FlatList
+          data={filteredAppointments}
+          renderItem={renderAppointmentCard}
+          keyExtractor={(item) => item.id.toString()}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#2196F3']}
+            />
+          }
+          contentContainerStyle={[
+            styles.listContainer,
+            filteredAppointments.length === 0 && styles.emptyList
+          ]}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
@@ -452,35 +516,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     marginLeft: 4,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 50,
-    paddingHorizontal: 30,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 30,
-  },
-  bookNowButton: {
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 25,
-  },
-  bookNowButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });

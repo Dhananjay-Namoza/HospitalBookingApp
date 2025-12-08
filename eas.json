@@ -14,6 +14,13 @@
         "EXPO_NO_CACHE": "1"
       }
     },
+    "preview": {               // <-- ADDED THIS BLOCK
+      "developmentClient": false,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "developmentClient": false,
       "distribution": "store",

@@ -13,12 +13,14 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
 import { mockChats } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
 export default function ChatsScreen() {
   const { user } = useUser();
   const [chats, setChats] = useState(mockChats);
   const [refreshing, setRefreshing] = useState(false);
-
+  const [loading, setLoading] = useState(false);
+  const [filteredChats, setFilteredChats] = useState([]);
+  const [searchText, setSearchText] = useState('');
   const onRefresh = async () => {
     setRefreshing(true);
     // Simulate API call
@@ -26,6 +28,24 @@ export default function ChatsScreen() {
       setRefreshing(false);
     }, 1000);
   };
+  useEffect(() => {
+  loadChats();
+}, []);
+const loadChats = async () => {
+  try {
+    setLoading(true);
+    const response = await ApiService.getChats();
+    
+    if (response.success && response.chats) {
+      setChats(response.chats);
+      setFilteredChats(response.chats);
+    }
+  } catch (err) {
+    console.error('Error loading chats:', err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -42,27 +62,34 @@ export default function ChatsScreen() {
     }
   };
 
-  const handleChatPress = (chat) => {
-    if (chat.type === 'doctor' && !user?.isPremium) {
-      Alert.alert(
-        'Premium Feature',
-        'Chat with doctors is available for premium members only. Would you like to upgrade?',
-        [
-          { text: 'Maybe Later', style: 'cancel' },
-          { 
-            text: 'Upgrade Now', 
-            onPress: () => Alert.alert('Upgrade', 'Upgrade feature will be available soon!') 
-          }
-        ]
-      );
-      return;
-    }
+  const handleChatPress = async (chat) => {
+  if (chat.type === 'doctor' && !user?.isPremium) {
+    Alert.alert(
+      'Premium Feature',
+      'Chat with doctors is available for premium members only.',
+      [{ text: 'OK' }]
+    );
+    return;
+  }
 
-    router.push({
-      pathname: '/(patient)/chat/[id]',
-      params: { id: chat.id }
+  // Create chat if it doesn't exist
+  try {
+    const response = await ApiService.createChat({
+      type: chat.type,
+      doctorId: chat.doctorId,
+      patientId: user.id,
     });
-  };
+    
+    if (response.success && response.chat) {
+      router.push({
+        pathname: '/(patient)/chat/[id]',
+        params: { id: response.chat.id }
+      });
+    }
+  } catch (err) {
+    Alert.alert('Error', 'Failed to open chat');
+  }
+};
 
   const renderChatItem = ({ item }) => (
     <TouchableOpacity

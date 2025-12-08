@@ -14,8 +14,7 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-import { mockMessages, mockUsers } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
 interface Message {
   id: number;
   senderId: number | string;
@@ -29,46 +28,46 @@ export default function DoctorChatScreen() {
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [patient, setPatient] = useState(null);
+  const [patient, setPatient] = useState({
+    name : 'tester',  email : 'tester@example.com', phone : '1234567890', isPremium: true
+  });
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
     loadChatData();
   }, []);
 
-  const loadChatData = () => {
-    const patientId = parseInt(id as string);
-    const foundPatient = mockUsers.find(u => u.id === patientId && u.type === 'patient');
+  const loadChatData = async () => {
+  try {
+    const chatId = parseInt(id as string);
+    const response = await ApiService.getChatMessages(chatId);
     
-    // Find existing messages for this patient-doctor chat
-    const existingMessages = Object.values(mockMessages).flat().filter(msg =>
-      (msg.senderId === patientId || msg.senderId === user?.id) &&
-      (msg.senderType === 'patient' || msg.senderType === 'doctor')
-    );
+    if (response.success && response.messages) {
+      setMessages(response.messages);
+    }
+  } catch (err) {
+    console.error('Error loading messages:', err);
+  }
+};
+ const sendMessage = async () => {
+  if (!newMessage.trim()) return;
+
+  try {
+    const chatId = parseInt(id as string);
+    const response = await ApiService.sendMessage(chatId, newMessage.trim());
     
-    setPatient(foundPatient);
-    setMessages(existingMessages);
-  };
-
-  const sendMessage = () => {
-    if (!newMessage.trim()) return;
-
-    const message: Message = {
-      id: Date.now(),
-      senderId: user?.id || 101,
-      senderType: 'doctor',
-      message: newMessage.trim(),
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, message]);
-    setNewMessage('');
-
-    // Auto-scroll to bottom
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
+    if (response.success && response.message) {
+      setMessages(prev => [...prev, response.message]);
+      setNewMessage('');
+      
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  } catch (err) {
+    Alert.alert('Error', 'Failed to send message');
+  }
+};
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);

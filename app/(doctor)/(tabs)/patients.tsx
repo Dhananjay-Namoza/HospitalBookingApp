@@ -7,11 +7,14 @@ import {
   StyleSheet,
   TextInput,
   Alert,
-  RefreshControl
+  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { mockAppointments, mockUsers } from '../../../data/mockData';
+import { PatientCardSkeleton } from '../../../components/Skeletons/SkeletonLoader';
+import { EmptyState } from '../../../components/EmptyState/EmptyState';
+import ApiService from '../../../services/api.service';
 
 interface Patient {
   id: number;
@@ -31,7 +34,13 @@ export default function PatientsScreen() {
   const [searchText, setSearchText] = useState('');
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-
+  const [loading, setLoading] = useState(true);
+  const showError = (message: string) => {
+    Alert.alert('Error', message);
+  };
+  const success = (message: string) => {
+    Alert.alert('Success', message);
+  };
   useEffect(() => {
     loadPatients();
   }, []);
@@ -40,21 +49,24 @@ export default function PatientsScreen() {
     filterPatients();
   }, [searchText, patients]);
 
-  const loadPatients = () => {
-    // Mock data: Get patients who have appointments
-    const patientAppointments = mockAppointments.reduce((acc, appointment) => {
-      const patient = mockUsers.find(user => user.id === appointment.patientId && user.type === 'patient');
-      if (patient) {
-        acc.push({
-          ...patient,
-          lastVisit: appointment.status === 'completed' ? appointment.date : 'No previous visits',
-          nextAppointment: appointment.status === 'upcoming' ? `${appointment.date} at ${appointment.time}` : undefined
-        });
+  const loadPatients = async () => {
+    try {
+      setLoading(true);
+      const response = await ApiService.getDoctorPatients();
+      
+      if (response.success && response.patients) {
+        setPatients(response.patients);
+        setFilteredPatients(response.patients);
+        success('Patients loaded successfully');
+      } else {
+        throw new Error(response.message || 'Failed to load patients');
       }
-      return acc;
-    }, []);
-
-    setPatients(patientAppointments);
+    } catch (err: any) {
+      console.error('Error loading patients:', err);
+      showError(err.message || 'Failed to load patients');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filterPatients = () => {
@@ -71,10 +83,13 @@ export default function PatientsScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      loadPatients();
+    try {
+      await loadPatients();
+    } catch (err) {
+      showError('Failed to refresh');
+    } finally {
       setRefreshing(false);
-    }, 1000);
+    }
   };
 
   const handlePatientPress = (patient: Patient) => {
@@ -193,12 +208,23 @@ export default function PatientsScreen() {
   );
 
   const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="people-outline" size={60} color="#ccc" />
-      <Text style={styles.emptyTitle}>No patients found</Text>
-      <Text style={styles.emptySubtitle}>
-        Patients will appear here once they book appointments with you
-      </Text>
+    <EmptyState
+      icon="people-outline"
+      title="No patients found"
+      description={searchText 
+        ? `No patients found matching "${searchText}"`
+        : "Patients will appear here once they book appointments with you"
+      }
+      actionText={searchText ? "Clear Search" : null}
+      onAction={searchText ? () => setSearchText('') : null}
+    />
+  );
+
+  const renderSkeletonLoader = () => (
+    <View style={styles.listContainer}>
+      <PatientCardSkeleton />
+      <PatientCardSkeleton />
+      <PatientCardSkeleton />
     </View>
   );
 
@@ -238,24 +264,28 @@ export default function PatientsScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={filteredPatients}
-        renderItem={renderPatientCard}
-        keyExtractor={(item) => item.id.toString()}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#2196F3']}
-          />
-        }
-        contentContainerStyle={[
-          styles.listContainer,
-          filteredPatients.length === 0 && styles.emptyList
-        ]}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        renderSkeletonLoader()
+      ) : (
+        <FlatList
+          data={filteredPatients}
+          renderItem={renderPatientCard}
+          keyExtractor={(item) => item.id.toString()}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#2196F3']}
+            />
+          }
+          contentContainerStyle={[
+            styles.listContainer,
+            filteredPatients.length === 0 && styles.emptyList
+          ]}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
@@ -448,24 +478,5 @@ const styles = StyleSheet.create({
   },
   actionButtonTextDisabled: {
     color: '#ccc',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    paddingHorizontal: 30,
-    lineHeight: 20,
   },
 });

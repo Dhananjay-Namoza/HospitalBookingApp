@@ -14,7 +14,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
 import { mockMessages, mockChats } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
 interface Message {
   id: number;
   senderId: number | string;
@@ -28,65 +28,48 @@ export default function PatientChatScreen() {
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [chat, setChat] = useState(null);
-  const flatListRef = useRef<FlatList>(null);
+  const [chat, setChat] = useState({
+    name: 'tester',
+    email: 'tester@example.com',
+    phone: '1234567890',
+    type: 'doctor',
+  });
+  const flatListRef = useRef<FlatList<any> | null>(null);
 
   useEffect(() => {
     loadChatData();
   }, []);
-
-  const loadChatData = () => {
+  const loadChatData = async () => {
+  try {
     const chatId = parseInt(id as string);
-    const foundChat = mockChats.find(c => c.id === chatId);
-    const chatMessages = mockMessages[chatId] || [];
+    const response = await ApiService.getChatMessages(chatId);
     
-    if (foundChat?.type === 'doctor' && !user?.isPremium) {
-      Alert.alert(
-        'Premium Required',
-        'You need a premium membership to chat with doctors.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-      return;
+    if (response.success && response.messages) {
+      setMessages(response.messages);
     }
+  } catch (err) {
+    console.error('Error loading messages:', err);
+  }
+};
+  const sendMessage = async () => {
+  if (!newMessage.trim()) return;
+
+  try {
+    const chatId = parseInt(id as string);
+    const response = await ApiService.sendMessage(chatId, newMessage.trim());
     
-    setChat(foundChat);
-    setMessages(chatMessages);
-  };
-
-  const sendMessage = () => {
-    if (!newMessage.trim()) return;
-
-    const message: Message = {
-      id: Date.now(),
-      senderId: user?.id || 1,
-      senderType: 'patient',
-      message: newMessage.trim(),
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, message]);
-    setNewMessage('');
-
-    // Auto-scroll to bottom
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    // Simulate response for demo
-    if (chat?.type === 'doctor') {
+    if (response.success && response.message) {
+      setMessages(prev => [...prev, response.message]);
+      setNewMessage('');
+      
       setTimeout(() => {
-        const response: Message = {
-          id: Date.now() + 1,
-          senderId: chat.doctorId || 'doctor',
-          senderType: 'doctor',
-          message: 'Thank you for your message. I will review and get back to you shortly.',
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, response]);
-      }, 2000);
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
-  };
-
+  } catch (err) {
+    Alert.alert('Error', 'Failed to send message');
+  }
+};
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

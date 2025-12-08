@@ -7,21 +7,54 @@ import {
   StyleSheet,
   TextInput,
   Image,
-  RefreshControl
+  RefreshControl,
+  Alert
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { mockDoctors } from '../../../data/mockData';
+// import { useToast } from '../../../components/Toast/ToastContext';
+import { DoctorCardSkeleton } from '../../../components/Skeletons/SkeletonLoader';
+import { EmptyState } from '../../../components/EmptyState/EmptyState';
+import ApiService from '../../../services/api.service';
 
 export default function HomeScreen() {
-  const [doctors, setDoctors] = useState(mockDoctors);
+  const [doctors, setDoctors] = useState([]);
   const [searchText, setSearchText] = useState('');
-  const [filteredDoctors, setFilteredDoctors] = useState(mockDoctors);
+  const [filteredDoctors, setFilteredDoctors] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  //  const { success, error, info } = useToast();
+  const success = (msg: string) => Alert.alert('Success', msg);
+  const error = (msg: string) => Alert.alert('Error', msg);
+  const info = (msg: string) => Alert.alert('Info', msg);
+
+  useEffect(() => {
+    loadDoctors();
+  }, []);
 
   useEffect(() => {
     filterDoctors();
-  }, [searchText]);
+  }, [searchText, doctors]);
+
+  const loadDoctors = async () => {
+    try {
+      setLoading(true);
+      const response = await ApiService.getDoctors();
+      
+      if (response.success && response.doctors) {
+        setDoctors(response.doctors);
+        setFilteredDoctors(response.doctors);
+        success('Doctors loaded successfully');
+      } else {
+        throw new Error(response.message || 'Failed to load doctors');
+      }
+    } catch (err: any) {
+      console.error('Error loading doctors:', err);
+      error(err.message || 'Failed to load doctors. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filterDoctors = () => {
     if (searchText === '') {
@@ -29,7 +62,7 @@ export default function HomeScreen() {
     } else {
       const filtered = doctors.filter(doctor =>
         doctor.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        doctor.speciality.toLowerCase().includes(searchText.toLowerCase())
+        doctor.speciality?.toLowerCase().includes(searchText.toLowerCase())
       );
       setFilteredDoctors(filtered);
     }
@@ -37,10 +70,13 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      await loadDoctors();
+    } catch (err) {
+      error('Failed to refresh');
+    } finally {
       setRefreshing(false);
-    }, 1000);
+    }
   };
 
   const renderDoctorCard = ({ item }) => (
@@ -52,35 +88,50 @@ export default function HomeScreen() {
       })}
       activeOpacity={0.7}
     >
-      <Image source={{ uri: item.image }} style={styles.doctorImage} />
+      <Image 
+        source={{ uri: item.image || 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face' }} 
+        style={styles.doctorImage} 
+      />
       <View style={styles.doctorInfo}>
         <Text style={styles.doctorName}>{item.name}</Text>
         <Text style={styles.doctorSpeciality}>{item.speciality}</Text>
         <View style={styles.ratingContainer}>
           <Ionicons name="star" size={16} color="#FFD700" />
-          <Text style={styles.rating}>{item.rating}</Text>
-          <Text style={styles.reviews}>({item.reviews} reviews)</Text>
+          <Text style={styles.rating}>{item.rating || 4.5}</Text>
+          <Text style={styles.reviews}>({item.reviews || 0} reviews)</Text>
         </View>
-        <Text style={styles.experience}>{item.experience} years experience</Text>
+        <Text style={styles.experience}>{item.experience || 0} years experience</Text>
         <View style={styles.availabilityContainer}>
           <Ionicons name="checkmark-circle" size={12} color="#4CAF50" />
           <Text style={styles.availability}>Available Today</Text>
         </View>
       </View>
       <View style={styles.consultationFee}>
-        <Text style={styles.feeText}>₹{item.consultationFee}</Text>
+        <Text style={styles.feeText}>₹{item.consultationFee || 500}</Text>
         <Text style={styles.feeLabel}>Consultation</Text>
         <TouchableOpacity 
           style={styles.bookButton}
-          onPress={() => router.push({
-            pathname: '/(patient)/book-appointment',
-            params: { doctorId: item.id }
-          })}
+          onPress={(e) => {
+            e.stopPropagation();
+            router.push({
+              pathname: '/(patient)/book-appointment',
+              params: { doctorId: item.id }
+            });
+          }}
         >
           <Text style={styles.bookButtonText}>Book</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
+  );
+
+  const renderSkeletonLoader = () => (
+    <View>
+      <DoctorCardSkeleton />
+      <DoctorCardSkeleton />
+      <DoctorCardSkeleton />
+      <DoctorCardSkeleton />
+    </View>
   );
 
   const renderHeader = () => (
@@ -104,7 +155,11 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Popular Specialities</Text>
         <View style={styles.specialitiesGrid}>
           {['Cardiology', 'Neurology', 'Pediatrics', 'Dermatology'].map((specialty) => (
-            <TouchableOpacity key={specialty} style={styles.specialityChip}>
+            <TouchableOpacity 
+              key={specialty} 
+              style={styles.specialityChip}
+              onPress={() => setSearchText(specialty)}
+            >
               <Text style={styles.specialityText}>{specialty}</Text>
             </TouchableOpacity>
           ))}
@@ -114,6 +169,34 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>Available Doctors</Text>
     </View>
   );
+
+  const renderEmptyState = () => (
+    <EmptyState
+      icon="search-outline"
+      title="No doctors found"
+      description={searchText 
+        ? `No doctors found matching "${searchText}". Try a different search term.`
+        : "No doctors available at the moment. Please try again later."
+      }
+      actionText={searchText ? "Clear Search" : "Refresh"}
+      onAction={() => {
+        if (searchText) {
+          setSearchText('');
+        } else {
+          loadDoctors();
+        }
+      }}
+    />
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        {renderHeader()}
+        {renderSkeletonLoader()}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -130,13 +213,11 @@ export default function HomeScreen() {
             colors={['#2196F3']}
           />
         }
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="search" size={50} color="#ccc" />
-            <Text style={styles.emptyText}>No doctors found</Text>
-          </View>
-        }
+        contentContainerStyle={[
+          styles.listContainer,
+          filteredDoctors.length === 0 && styles.emptyContainer
+        ]}
+        ListEmptyComponent={renderEmptyState}
       />
     </View>
   );
@@ -203,6 +284,9 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingBottom: 20,
+  },
+  emptyContainer: {
+    flex: 1,
   },
   doctorCard: {
     backgroundColor: '#fff',
@@ -295,15 +379,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 10,
   },
 });

@@ -13,11 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
 import { useUser } from '../../context/UserContext';
-import { 
-  mockDoctorAvailability, 
-  mockAppointments, 
-  mockUnavailabilityMessages 
-} from '../../data/mockData';
+import ApiService from './../../services/api.service';
 
 export default function ManageAvailabilityScreen() {
   const { user } = useUser();
@@ -29,7 +25,7 @@ export default function ManageAvailabilityScreen() {
   const [reason, setReason] = useState('');
   const [showUnavailabilityModal, setShowUnavailabilityModal] = useState(false);
   const [affectedAppointments, setAffectedAppointments] = useState([]);
-
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     loadAvailability();
   }, []);
@@ -40,13 +36,16 @@ export default function ManageAvailabilityScreen() {
     }
   }, [selectedDate, unavailabilityType, startTime, endTime]);
 
-  const loadAvailability = () => {
-    const doctorAvailability = mockDoctorAvailability[user?.id];
-    if (doctorAvailability) {
-      setAvailability(doctorAvailability);
+  const loadAvailability = async () => {
+  try {
+    const response = await ApiService.getDoctorAvailability(user.id);
+    if (response.success && response.availability) {
+      setAvailability(response.availability);
     }
-  };
-
+  } catch (err) {
+    console.error('Error loading availability:', err);
+  }
+};
   const checkAffectedAppointments = () => {
     if (!selectedDate) return;
 
@@ -65,30 +64,39 @@ export default function ManageAvailabilityScreen() {
     setAffectedAppointments(affected);
   };
 
-  const handleMarkUnavailable = () => {
-    if (!selectedDate || !reason.trim()) {
-      Alert.alert('Error', 'Please select a date and provide a reason');
-      return;
-    }
+  const handleMarkUnavailable = async () => {
+  if (!selectedDate || !reason.trim()) {
+    Alert.alert('Error', 'Please select a date and provide a reason');
+    return;
+  }
 
-    if (unavailabilityType === 'partial' && (!startTime || !endTime)) {
-      Alert.alert('Error', 'Please specify start and end times for partial unavailability');
-      return;
-    }
+  try {
+    setLoading(true);
+    const unavailabilityData = {
+      date: selectedDate,
+      type: unavailabilityType,
+      startTime: unavailabilityType === 'partial' ? startTime : undefined,
+      endTime: unavailabilityType === 'partial' ? endTime : undefined,
+      reason,
+      affectedAppointments: affectedAppointments.map(apt => apt.id),
+    };
 
-    if (affectedAppointments.length > 0) {
+    const response = await ApiService.markDoctorUnavailable(unavailabilityData);
+    
+    if (response.success) {
       Alert.alert(
-        'Affected Appointments',
-        `This will affect ${affectedAppointments.length} appointment(s). A message will be sent to reception for rescheduling.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue', onPress: confirmUnavailability }
-        ]
+        'Unavailability Marked',
+        'Reception has been notified and will handle appointment rescheduling.',
+        [{ text: 'OK', onPress: () => setShowUnavailabilityModal(false) }]
       );
-    } else {
-      confirmUnavailability();
+      await loadAvailability();
     }
-  };
+  } catch (err) {
+    Alert.alert('Error', 'Failed to mark unavailability');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const confirmUnavailability = () => {
     // Create unavailability message for reception

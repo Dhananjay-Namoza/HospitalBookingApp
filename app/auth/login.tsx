@@ -8,18 +8,21 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView
+  ScrollView,
+  ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
-import { mockUsers } from '../../data/mockData';
+import ApiService from '../../services/api.service';
+import { useUser } from '../../context/UserContext';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const { setUser } = useUser();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -29,27 +32,39 @@ export default function LoginScreen() {
 
     setLoading(true);
     
-    // Simulate API call
-    setTimeout(async () => {
-      const user = mockUsers.find(u => u.email === email && u.password === password);
+    try {
+      // Call actual API
+      const response = await ApiService.login(email, password);
       
-      if (user) {
-        await SecureStore.setItemAsync('userToken', 'mock-token-' + Date.now());
-        await SecureStore.setItemAsync('userType', user.type);
-        await SecureStore.setItemAsync('userData', JSON.stringify(user));
+      if (response.success && response.token && response.user) {
+        // Store token and user data
+        await SecureStore.setItemAsync('userToken', response.token);
+        await SecureStore.setItemAsync('userType', response.user.type);
+        await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
+        
+        // Update user context
+        setUser(response.user);
         
         // Navigate based on user type
-        if (user.type === 'patient') {
+        if (response.user.type === 'patient') {
           router.replace('/(patient)/(tabs)/home');
-        } else {
+        } else if (response.user.type === 'doctor') {
           router.replace('/(doctor)/(tabs)/patients');
+        } else if (response.user.type === 'reception') {
+          router.replace('/(reception)');
         }
       } else {
-        Alert.alert('Error', 'Invalid credentials');
+        throw new Error(response.message || 'Login failed');
       }
-      
+    } catch (error: any) {
+      console.error('Login error:', error);
+      Alert.alert(
+        'Login Failed', 
+        error.message || 'Invalid credentials. Please try again.'
+      );
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -75,6 +90,7 @@ export default function LoginScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              editable={!loading}
             />
           </View>
           
@@ -87,10 +103,12 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoComplete="password"
+              editable={!loading}
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
               style={styles.eyeIcon}
+              disabled={loading}
             >
               <Ionicons 
                 name={showPassword ? "eye-outline" : "eye-off-outline"} 
@@ -105,29 +123,35 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.loginButtonText}>
-              {loading ? 'Logging in...' : 'Login'}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginButtonText}>Login</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity 
             onPress={() => router.push('/auth/forgot-password')}
             style={styles.forgotPasswordContainer}
+            disabled={loading}
           >
             <Text style={styles.forgotPassword}>Forgot Password?</Text>
           </TouchableOpacity>
 
           <View style={styles.signupContainer}>
             <Text style={styles.signupText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/auth/signup')}>
+            <TouchableOpacity 
+              onPress={() => router.push('/auth/signup')}
+              disabled={loading}
+            >
               <Text style={styles.signupLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.demoCredentials}>
             <Text style={styles.demoTitle}>Demo Credentials:</Text>
-            <Text style={styles.demoText}>Patient: patient@test.com / 123456</Text>
-            <Text style={styles.demoText}>Doctor: doctor@test.com / 123456</Text>
+            <Text style={styles.demoText}>Doctor: doctor1@hospital.com / Doctor@123</Text>
+            <Text style={styles.demoText}>Reception: hotalkreception@gmail.com / Reception@2024</Text>
           </View>
         </View>
       </ScrollView>

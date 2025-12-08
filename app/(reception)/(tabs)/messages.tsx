@@ -18,7 +18,7 @@ import {
   mockDoctorAvailability,
   mockUsers 
 } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
 export default function ReceptionMessagesScreen() {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -29,7 +29,7 @@ export default function ReceptionMessagesScreen() {
   const [availableSlots, setAvailableSlots] = useState([]);
   const [replacementPatientId, setReplacementPatientId] = useState('');
   const [showReplaceModal, setShowReplaceModal] = useState(false);
-
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     loadMessages();
   }, []);
@@ -40,9 +40,20 @@ export default function ReceptionMessagesScreen() {
     }
   }, [newDate, selectedMessage]);
 
-  const loadMessages = () => {
-    setMessages(mockUnavailabilityMessages);
-  };
+  const loadMessages = async () => {
+  try {
+    setLoading(true);
+    const response = await ApiService.getReceptionMessages();
+    
+    if (response.success && response.messages) {
+      setMessages(response.messages);
+    }
+  } catch (err) {
+    console.error('Error loading messages:', err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const generateAvailableSlots = () => {
     const doctorId = selectedMessage.doctorId;
@@ -146,29 +157,30 @@ export default function ReceptionMessagesScreen() {
     );
   };
 
-  const confirmReschedule = () => {
-    if (!newDate || !newTime) {
-      Alert.alert('Error', 'Please select date and time');
-      return;
-    }
+  const confirmReschedule = async () => {
+  if (!newDate || !newTime) {
+    Alert.alert('Error', 'Please select date and time');
+    return;
+  }
 
-    const appointmentIndex = mockAppointments.findIndex(apt => apt.id === selectedAppointment.id);
-    if (appointmentIndex !== -1) {
-      mockAppointments[appointmentIndex] = {
-        ...mockAppointments[appointmentIndex],
-        date: newDate,
-        time: newTime,
-        isRescheduled: true,
-        originalDate: mockAppointments[appointmentIndex].date,
-        rescheduledBy: 'reception'
-      };
+  try {
+    const response = await ApiService.updateAppointment(selectedAppointment.id, {
+      date: newDate,
+      time: newTime,
+      isRescheduled: true,
+      originalDate: selectedAppointment.date,
+      rescheduledBy: 'reception'
+    });
+    
+    if (response.success) {
+      Alert.alert('Success', 'Appointment rescheduled successfully');
+      setShowRescheduleModal(false);
+      await loadMessages();
     }
-
-    Alert.alert('Success', 'Appointment rescheduled successfully');
-    setShowRescheduleModal(false);
-    setNewDate('');
-    setNewTime('');
-  };
+  } catch (err) {
+    Alert.alert('Error', 'Failed to reschedule appointment');
+  }
+};
 
   const confirmReplace = () => {
     if (!replacementPatientId) {
@@ -222,14 +234,20 @@ export default function ReceptionMessagesScreen() {
     setReplacementPatientId('');
   };
 
-  const markMessageAsHandled = (messageId) => {
-    const messageIndex = messages.findIndex(msg => msg.id === messageId);
-    if (messageIndex !== -1) {
-      const updatedMessages = [...messages];
-      updatedMessages[messageIndex].status = 'handled';
-      setMessages(updatedMessages);
+const markMessageAsHandled = async (messageId) => {
+  try {
+    const response = await ApiService.updateReceptionMessage(messageId, {
+      status: 'handled'
+    });
+    
+    if (response.success) {
+      await loadMessages();
+      success('Message marked as handled');
     }
-  };
+  } catch (err) {
+    showError('Failed to update message');
+  }
+};
 
   const renderMessage = ({ item }) => (
     <View style={styles.messageCard}>

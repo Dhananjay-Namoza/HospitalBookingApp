@@ -1,3 +1,4 @@
+// app/auth/signup.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -8,10 +9,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView
+  ScrollView,
+  ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import ApiService from '../../services/api.service';
 
 export default function SignUpScreen() {
   const [formData, setFormData] = useState({
@@ -41,20 +44,45 @@ export default function SignUpScreen() {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
     setLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      router.push({
-        pathname: '/auth/otp-verification',
-        params: { 
-          email: formData.email,
-          phone: formData.phone,
-          type: 'signup'
-        }
+    try {
+      const response = await ApiService.register({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
       });
-    }, 1500);
+
+      if (response.success) {
+        Alert.alert(
+          'Success!',
+          'Account created successfully! Please login to continue.',
+          [
+            {
+              text: 'Login',
+              onPress: () => router.replace('/auth/login')
+            }
+          ]
+        );
+      } else {
+        throw new Error(response.message || 'Registration failed');
+      }
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      Alert.alert(
+        'Registration Failed',
+        error.message || 'Unable to create account. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateFormData = (key: string, value: string) => {
@@ -82,6 +110,7 @@ export default function SignUpScreen() {
               value={formData.name}
               onChangeText={(text) => updateFormData('name', text)}
               autoComplete="name"
+              editable={!loading}
             />
           </View>
 
@@ -95,6 +124,7 @@ export default function SignUpScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              editable={!loading}
             />
           </View>
 
@@ -107,6 +137,7 @@ export default function SignUpScreen() {
               onChangeText={(text) => updateFormData('phone', text)}
               keyboardType="phone-pad"
               autoComplete="tel"
+              editable={!loading}
             />
           </View>
           
@@ -119,10 +150,12 @@ export default function SignUpScreen() {
               onChangeText={(text) => updateFormData('password', text)}
               secureTextEntry={!showPassword}
               autoComplete="password-new"
+              editable={!loading}
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
               style={styles.eyeIcon}
+              disabled={loading}
             >
               <Ionicons 
                 name={showPassword ? "eye-outline" : "eye-off-outline"} 
@@ -140,10 +173,12 @@ export default function SignUpScreen() {
               value={formData.confirmPassword}
               onChangeText={(text) => updateFormData('confirmPassword', text)}
               secureTextEntry={!showConfirmPassword}
+              editable={!loading}
             />
             <TouchableOpacity
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
               style={styles.eyeIcon}
+              disabled={loading}
             >
               <Ionicons 
                 name={showConfirmPassword ? "eye-outline" : "eye-off-outline"} 
@@ -158,9 +193,11 @@ export default function SignUpScreen() {
             onPress={handleSignUp}
             disabled={loading}
           >
-            <Text style={styles.signUpButtonText}>
-              {loading ? 'Creating Account...' : 'Create Account'}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.signUpButtonText}>Create Account</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.termsContainer}>
@@ -174,7 +211,10 @@ export default function SignUpScreen() {
 
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity 
+              onPress={() => router.back()}
+              disabled={loading}
+            >
               <Text style={styles.loginLink}>Sign In</Text>
             </TouchableOpacity>
           </View>

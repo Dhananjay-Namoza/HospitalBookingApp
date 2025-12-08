@@ -10,12 +10,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { mockAppointments } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
+// import { useToast } from '../../../components/Toast/ToastContext';
 export default function DoctorAppointmentsScreen() {
-  const [appointments, setAppointments] = useState(mockAppointments);
+  const [appointments, setAppointments] = useState();
   const [activeTab, setActiveTab] = useState('today');
   const [refreshing, setRefreshing] = useState(false);
-
+  const [loading, setLoading] = useState(false);
   const filterAppointments = () => {
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date();
@@ -30,60 +31,81 @@ export default function DoctorAppointmentsScreen() {
       return appointments.filter(apt => apt.status === 'completed');
     }
   };
+  useEffect(() => {
+    loadAppointments();
+  }, []);
 
+  const showError = (message: string) => {
+    Alert.alert('Error', message);
+  };
+  const success = (message: string) => {
+    Alert.alert('Success', message);
+  };
   const onRefresh = async () => {
     setRefreshing(true);
+    await loadAppointments();
     setTimeout(() => {
       setRefreshing(false);
     }, 1000);
   };
-
-  const handleAppointmentAction = (appointmentId: number, action: string) => {
-    if (action === 'complete') {
-      Alert.alert(
-        'Complete Appointment',
-        'Mark this appointment as completed?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Complete',
-            onPress: () => {
-              setAppointments(prev =>
-                prev.map(apt =>
-                  apt.id === appointmentId
-                    ? { ...apt, status: 'completed' }
-                    : apt
-                )
-              );
-            }
-          }
-        ]
-      );
-    } else if (action === 'reschedule') {
-      Alert.alert('Reschedule', 'Reschedule functionality will be available soon!');
-    } else if (action === 'cancel') {
-      Alert.alert(
-        'Cancel Appointment',
-        'Are you sure you want to cancel this appointment?',
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes, Cancel',
-            style: 'destructive',
-            onPress: () => {
-              setAppointments(prev =>
-                prev.map(apt =>
-                  apt.id === appointmentId
-                    ? { ...apt, status: 'cancelled' }
-                    : apt
-                )
-              );
-            }
-          }
-        ]
-      );
+  const loadAppointments = async () => {
+  try {
+    setLoading(true);
+    const response = await ApiService.getAppointments();
+    
+    if (response.success && response.appointments) {
+      setAppointments(response.appointments);
     }
-  };
+  } catch (err) {
+    showError('Failed to load appointments');
+  } finally {
+    setLoading(false);
+  }
+};
+  const handleAppointmentAction = async (appointmentId: number, action: string) => {
+  if (action === 'complete') {
+    Alert.alert(
+      'Complete Appointment',
+      'Mark this appointment as completed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          onPress: async () => {
+            try {
+              await ApiService.updateAppointment(appointmentId, { status: 'completed' });
+              await loadAppointments();
+              success('Appointment completed');
+            } catch (err) {
+              showError('Failed to update appointment');
+            }
+          }
+        }
+      ]
+    );
+  } else if (action === 'cancel') {
+    Alert.alert(
+      'Cancel Appointment',
+      'Are you sure you want to cancel this appointment?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ApiService.cancelAppointment(appointmentId);
+              await loadAppointments();
+              success('Appointment cancelled');
+            } catch (err) {
+              showError('Failed to cancel appointment');
+            }
+          }
+        }
+      ]
+    );
+  }
+};
 
   const getStatusColor = (status: string) => {
     switch (status) {

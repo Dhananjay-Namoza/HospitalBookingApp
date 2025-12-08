@@ -12,7 +12,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mockUsers, mockMedicalRecords, mockAppointments } from '../../data/mockData';
-
+import ApiService from './../../services/api.service';
 export default function PatientDetailScreen() {
   const { patientId } = useLocalSearchParams();
   const [patient, setPatient] = useState(null);
@@ -25,16 +25,25 @@ export default function PatientDetailScreen() {
     loadPatientData();
   }, []);
 
-  const loadPatientData = () => {
-    const foundPatient = mockUsers.find(u => u.id === parseInt(patientId as string) && u.type === 'patient');
-    const patientRecord = mockMedicalRecords[parseInt(patientId as string)];
-    const patientAppointments = mockAppointments.filter(a => a.patientId === parseInt(patientId as string));
+const loadPatientData = async () => {
+  try {
+    setLoading(true);
+    const patientId = parseInt(params.patientId as string);
     
-    setPatient(foundPatient);
-    setMedicalRecord(patientRecord);
-    setAppointments(patientAppointments);
+    // Load patient info and their appointments
+    const [appointmentsResponse] = await Promise.all([
+      ApiService.getAppointments({ patientId }),
+    ]);
+    
+    if (appointmentsResponse.success) {
+      setAppointments(appointmentsResponse.appointments);
+    }
+  } catch (err) {
+    console.error('Error loading patient data:', err);
+  } finally {
     setLoading(false);
-  };
+  }
+};
 
   const handleCall = () => {
     if (patient?.phone) {

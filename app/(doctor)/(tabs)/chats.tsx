@@ -12,13 +12,13 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { mockChats, mockUsers } from '../../../data/mockData';
-
+import ApiService from '../../../services/api.service';
 export default function DoctorChatsScreen() {
   const [chats, setChats] = useState([]);
   const [filteredChats, setFilteredChats] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
-
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     loadChats();
   }, []);
@@ -27,19 +27,21 @@ export default function DoctorChatsScreen() {
     filterChats();
   }, [searchText, chats]);
 
-  const loadChats = () => {
-    // Filter chats to show only patient chats for doctor
-    const patientChats = mockChats.filter(chat => chat.type === 'doctor').map(chat => {
-      const patient = mockUsers.find(user => user.id === chat.patientId);
-      return {
-        ...chat,
-        name: patient?.name || 'Unknown Patient',
-        avatar: null, // Patients don't have avatars in our mock data
-        isPremium: patient?.isPremium || false
-      };
-    });
-    setChats(patientChats);
-  };
+const loadChats = async () => {
+  try {
+    setLoading(true);
+    const response = await ApiService.getChats();
+    
+    if (response.success && response.chats) {
+      setChats(response.chats);
+      setFilteredChats(response.chats);
+    }
+  } catch (err) {
+    console.error('Error loading chats:', err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filterChats = () => {
     if (searchText === '') {
