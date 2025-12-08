@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ]
+, "app/(doctor)/(tabs)/_layout.tsx", "app/(doctor)/(tabs)/chats.tsx", "app/(doctor)/(tabs)/appointments.tsx", "app/(doctor)/(tabs)/patients.tsx", "app/(doctor)/(tabs)/profile.tsx", "app/(doctor)/chat/[id].tsx", "app/(doctor)/_layout.tsx", "app/(doctor)/index.tsx", "app/(doctor)/manage-availability.tsx", "app/(doctor)/patient-detail.tsx", "app/(patient)/(tabs)/_layout.tsx", "app/(patient)/(tabs)/appointments.tsx", "app/(patient)/(tabs)/chats.tsx", "app/(patient)/(tabs)/home.tsx", "app/(patient)/(tabs)/profile.tsx", "app/(patient)/chat/[id].tsx", "app/(patient)/_layout.tsx", "app/(patient)/book-appointment.tsx", "app/(patient)/doctor-detail.tsx", "app/(reception)/(tabs)/messages.tsx", "app/(reception)/_layout.tsx", "app/auth/_layout.tsx", "app/auth/forgot-password.tsx", "app/auth/login.tsx", "app/auth/otp-verification.tsx", "app/auth/signup.tsx", "app/_layout.tsx", "app/index.tsx", "components/EmptyState/EmptyState.tsx", "components/Skeletons/SkeletonLoader.tsx", "components/Toast/ToastContext.tsx", "components/LoadingScreen.tsx", "context/AppointmentContext.tsx", "context/UserContext.tsx", "data/mockData.ts", "utils/storage.js"  ]
 }
