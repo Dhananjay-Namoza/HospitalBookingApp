@@ -52,18 +52,6 @@ export default function PatientAppointmentsScreen() {
     loadAppointments();
   }, []);
 
-  const loadAppointments = async () => {
-    try {
-      setLoading(true);
-      await loadData();
-      await new Promise(resolve => setTimeout(resolve, 800));
-    } catch (err) {
-      showError('Failed to load appointments');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const filterAppointments = () => {
     const today = new Date().toISOString().split('T')[0];
     const currentTime = new Date().toTimeString().slice(0, 5);
