@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
     UPDATE_AVAILABILITY: (id: number) => `${API_BASE_URL}/doctors/${id}/availability`,
     MARK_UNAVAILABLE: `${API_BASE_URL}/doctors/unavailable`,
     MY_PATIENTS: `${API_BASE_URL}/doctors/me/patients`,
+    PATIENT_BY_ID: (id: number) => `${API_BASE_URL}/doctors/patients/${id}`,
   },
   
   // Appointment endpoints

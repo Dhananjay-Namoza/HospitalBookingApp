@@ -95,7 +95,11 @@ class ApiService {
       method: 'GET',
     }, false);
   }
-
+  async getPatientById(id: number) {
+    return this.request(API_ENDPOINTS.DOCTORS.PATIENT_BY_ID(id), {
+      method: 'GET',
+    });
+  }
   async getDoctorAvailability(id: number) {
     return this.request(API_ENDPOINTS.DOCTORS.AVAILABILITY(id), {
       method: 'GET',

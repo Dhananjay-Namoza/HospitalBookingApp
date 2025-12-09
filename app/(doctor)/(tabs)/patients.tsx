@@ -49,25 +49,42 @@ export default function PatientsScreen() {
     filterPatients();
   }, [searchText, patients]);
 
-  const loadPatients = async () => {
-    try {
-      setLoading(true);
-      const response = await ApiService.getDoctorPatients();
-      
-      if (response.success && response.patients) {
-        setPatients(response.patients);
-        setFilteredPatients(response.patients);
-        success('Patients loaded successfully');
-      } else {
-        throw new Error(response.message || 'Failed to load patients');
-      }
-    } catch (err: any) {
-      console.error('Error loading patients:', err);
-      showError(err.message || 'Failed to load patients');
-    } finally {
-      setLoading(false);
+const loadPatients = async () => {
+  try {
+    setLoading(true);
+    const response = await ApiService.getDoctorPatients();
+
+    if (response.success && response.patients) {
+
+      const normalizedPatients = response.patients.map((patient: any) => ({
+        ...patient,
+
+        lastVisit:
+          typeof patient.lastVisit === 'string'
+            ? patient.lastVisit
+            : patient.lastVisit?.date ?? 'No visits',
+
+        nextAppointment:
+          typeof patient.nextAppointment === 'string'
+            ? patient.nextAppointment
+            : patient.nextAppointment?.date ?? null,
+      }));
+
+      setPatients(normalizedPatients);
+      setFilteredPatients(normalizedPatients);
+      success('Patients loaded successfully');
+
+    } else {
+      throw new Error(response.message || 'Failed to load patients');
     }
-  };
+
+  } catch (err: any) {
+    console.error('Error loading patients:', err);
+    showError(err.message || 'Failed to load patients');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filterPatients = () => {
     if (searchText === '') {

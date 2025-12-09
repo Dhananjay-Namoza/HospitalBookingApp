@@ -28,15 +28,22 @@ export default function PatientDetailScreen() {
 const loadPatientData = async () => {
   try {
     setLoading(true);
-    const patientId = parseInt(params.patientId as string);
-    
-    // Load patient info and their appointments
+    console.log("patient:",patientId)
+    const id = Number(patientId); // ✅ coming from useLocalSearchParams
+
+    if (!id) {
+      throw new Error('Invalid patient id');
+    }
+
     const [appointmentsResponse] = await Promise.all([
-      ApiService.getAppointments({ patientId }),
+      ApiService.getAppointments({ patientId: id }),
     ]);
-    
     if (appointmentsResponse.success) {
       setAppointments(appointmentsResponse.appointments);
+    }
+    const patientResponse = await ApiService.getPatientById(id);
+    if (patientResponse.success) {
+      setPatient(patientResponse.patient);
     }
   } catch (err) {
     console.error('Error loading patient data:', err);
