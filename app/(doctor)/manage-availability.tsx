@@ -48,20 +48,6 @@ export default function ManageAvailabilityScreen() {
 };
   const checkAffectedAppointments = () => {
     if (!selectedDate) return;
-
-    let affected = mockAppointments.filter(apt => 
-      apt.doctorId === user?.id && 
-      apt.date === selectedDate && 
-      apt.status === 'upcoming'
-    );
-
-    if (unavailabilityType === 'partial' && startTime && endTime) {
-      affected = affected.filter(apt => 
-        apt.time >= startTime && apt.time <= endTime
-      );
-    }
-
-    setAffectedAppointments(affected);
   };
 
   const handleMarkUnavailable = async () => {
@@ -455,6 +441,7 @@ export default function ManageAvailabilityScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop:20,
     backgroundColor: '#f8f9fa',
   },
   loadingContainer: {

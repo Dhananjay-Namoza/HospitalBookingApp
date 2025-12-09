@@ -105,6 +105,10 @@ export default function DoctorAppointmentsScreen() {
         }
       ]
     );
+  } else if (action === 'reschedule') {
+    // For simplicity, we'll just show an alert here.
+    // In a real app, you'd navigate to a rescheduling screen.
+    Alert.alert('Reschedule', 'Rescheduling feature coming soon!');
   }
 };
 
