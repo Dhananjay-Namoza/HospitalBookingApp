@@ -51,7 +51,7 @@ export default function LoginScreen() {
         } else if (response.user.type === 'doctor') {
           router.replace('/(doctor)/(tabs)/patients');
         } else if (response.user.type === 'reception') {
-          router.replace('/(reception)');
+          router.replace('/(reception)/(tabs)/dashboard');
         }
       } else {
         throw new Error(response.message || 'Login failed');

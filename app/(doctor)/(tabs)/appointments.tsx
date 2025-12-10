@@ -12,11 +12,37 @@ import { Ionicons } from '@expo/vector-icons';
 import { mockAppointments } from '../../../data/mockData';
 import ApiService from '../../../services/api.service';
 // import { useToast } from '../../../components/Toast/ToastContext';
+import { RescheduleModal } from '../../../components/RescheduleModal';
 export default function DoctorAppointmentsScreen() {
   const [appointments, setAppointments] = useState();
   const [activeTab, setActiveTab] = useState('today');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [selectedAppointmentForReschedule, setSelectedAppointmentForReschedule] = useState(null);
+  const [todayAppointmentsCount, setTodayAppointmentsCount] = useState(0);
+  const [upcomingAppointmentsCount, setUpcomingAppointmentsCount] = useState(0);
+  const [pastAppointmentsCount, setPastAppointmentsCount] = useState(0);
+  const appoitmentcountor = () => {
+    let today = 0;
+    let upcoming = 0;
+    let past = 0;
+    appointments.forEach(apt => {
+      const aptDate = new Date(apt.date);
+      const currentDate = new Date();
+      if (aptDate.toDateString() === currentDate.toDateString() && apt.status !== 'cancelled') {
+        today++;
+      } else if (aptDate > currentDate && apt.status !== 'cancelled') {
+        upcoming++;
+      } else if (apt.status === 'completed') {
+        past++;
+      }
+    });
+    setTodayAppointmentsCount(today);
+    setUpcomingAppointmentsCount(upcoming);
+    setPastAppointmentsCount(past);
+  };
+
   const filterAppointments = () => {
     if (!appointments) return [];
     const today = new Date().toISOString().split('T')[0];
@@ -33,7 +59,10 @@ export default function DoctorAppointmentsScreen() {
     }
   };
   useEffect(() => {
-    loadAppointments();
+    (async () => {
+      await loadAppointments();
+      appoitmentcountor();
+    })();
   }, []);
 
   const showError = (message: string) => {
@@ -106,9 +135,9 @@ export default function DoctorAppointmentsScreen() {
       ]
     );
   } else if (action === 'reschedule') {
-    // For simplicity, we'll just show an alert here.
-    // In a real app, you'd navigate to a rescheduling screen.
-    Alert.alert('Reschedule', 'Rescheduling feature coming soon!');
+    const appointment = appointments?.find(apt => apt.id === appointmentId);
+    setSelectedAppointmentForReschedule(appointment);
+    setShowRescheduleModal(true);
   }
 };
 
@@ -239,7 +268,7 @@ export default function DoctorAppointmentsScreen() {
               {tab === 'today' ? 'Today' : tab === 'upcoming' ? 'Upcoming' : 'Past'}
             </Text>
             <Text style={[styles.tabCount, activeTab === tab && styles.activeTabCount]}>
-              {filterAppointments().length}
+              {tab === 'today' ? todayAppointmentsCount : tab === 'upcoming' ? upcomingAppointmentsCount : pastAppointmentsCount}
             </Text>
           </TouchableOpacity>
         ))}
@@ -263,6 +292,17 @@ export default function DoctorAppointmentsScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       />
+      {showRescheduleModal && selectedAppointmentForReschedule && (
+  <RescheduleModal
+    visible={showRescheduleModal}
+    onClose={() => {
+      setShowRescheduleModal(false);
+      setSelectedAppointmentForReschedule(null);
+    }}
+    appointment={selectedAppointmentForReschedule}
+    onSuccess={loadAppointments}
+  />
+)}
     </View>
   );
 }

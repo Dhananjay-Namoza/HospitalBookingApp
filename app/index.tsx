@@ -19,10 +19,12 @@ export default function Index() {
             router.replace('/(patient)/(tabs)/home');
           } else if (userType === 'doctor') {
             router.replace('/(doctor)/(tabs)/patients');
-          }
+          }else if (userType === 'reception') {
+            router.replace('/(reception)/(tabs)/dashboard');
         } else {
           router.replace('/auth/login');
         }
+      }
       }, 3000);
     } catch (error) {
       console.log('Auth check error:', error);

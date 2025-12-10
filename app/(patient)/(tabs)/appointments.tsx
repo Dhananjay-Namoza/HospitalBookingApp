@@ -11,11 +11,10 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-// import { useToast } from '../../../components/Toast/ToastContext';
 import { AppointmentCardSkeleton } from '../../../components/Skeletons/SkeletonLoader';
 import { EmptyState } from '../../../components/EmptyState/EmptyState';
 import ApiService from '../../../services/api.service';
-
+import { RescheduleModal } from '../../../components/RescheduleModal';
 export default function PatientAppointmentsScreen() {
   const { user } = useUser();
   // const { success, error: showError, info } = useToast();
@@ -23,6 +22,8 @@ export default function PatientAppointmentsScreen() {
   const [activeTab, setActiveTab] = useState('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [selectedAppointmentForReschedule, setSelectedAppointmentForReschedule] = useState(null);
   const success = (msg: string) => Alert.alert('Success', msg);
   const showError = (msg: string) => Alert.alert('Error', msg);
   const info = (msg: string) => Alert.alert('Info', msg);
@@ -83,28 +84,10 @@ export default function PatientAppointmentsScreen() {
     }
   };
 
-  const handleReschedule = (appointment) => {
-    Alert.alert(
-      'Reschedule Appointment',
-      `Do you want to reschedule your appointment with ${appointment.doctorName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reschedule',
-          onPress: () => {
-            info('Redirecting to reschedule...');
-            router.push({
-              pathname: '/(patient)/book-appointment',
-              params: { 
-                doctorId: appointment.doctorId,
-                rescheduleId: appointment.id 
-              }
-            });
-          }
-        }
-      ]
-    );
-  };
+  const handleReschedule = (appointment: any) => {
+  setSelectedAppointmentForReschedule(appointment);
+  setShowRescheduleModal(true);
+};
 
   const handleCancel = async (appointmentId: number) => {
     Alert.alert(
@@ -211,6 +194,17 @@ export default function PatientAppointmentsScreen() {
           </TouchableOpacity>
         </View>
       )}
+      {showRescheduleModal && selectedAppointmentForReschedule && (
+  <RescheduleModal
+    visible={showRescheduleModal}
+    onClose={() => {
+      setShowRescheduleModal(false);
+      setSelectedAppointmentForReschedule(null);
+    }}
+    appointment={selectedAppointmentForReschedule}
+    onSuccess={loadAppointments}
+  />
+)}
     </View>
   );
 
