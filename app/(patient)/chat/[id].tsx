@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,44 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useUser } from '../../../context/UserContext';
-import { mockMessages, mockChats } from '../../../data/mockData';
 import ApiService from '../../../services/api.service';
+import MessageBubble from '../../../components/Chat/MessageBubble';
+import { 
+  connectSocket, 
+  isSocketConnected 
+} from '../../../socket/client';
+import {
+  sendMessage as socketSendMessage,
+  onNewMessage,
+  onMessageSentSuccess,
+  onMessageSentError,
+  typingStart,
+  typingStop,
+  markMessagesRead,
+  bindSocketLifecycle,
+  flushOutbox,
+} from '../../../socket/events';
+import { uploadFile } from '../../../api/files';
+
 interface Message {
-  id: number;
+  _id?: string;
+  id?: number;
+  chatId: string;
   senderId: number | string;
   senderType: 'patient' | 'doctor' | 'reception';
-  message: string;
+  messageType: 'text' | 'image' | 'file';
+  body?: string;
+  hasFile?: boolean;
+  file?: any;
+  status?: 'sending' | 'sent' | 'delivered' | 'failed';
   timestamp: string;
 }
 
@@ -28,199 +54,415 @@ export default function PatientChatScreen() {
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [chat, setChat] = useState({
-    name: 'tester',
-    email: 'tester@example.com',
-    phone: '1234567890',
-    type: 'doctor',
-  });
-  const flatListRef = useRef<FlatList<any> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
-  useEffect(() => {
-    loadChatData();
-  }, []);
-  const loadChatData = async () => {
-  try {
-    const chatId = parseInt(id as string);
-    const response = await ApiService.getChatMessages(chatId);
-    
-    if (response.success && response.messages) {
-      setMessages(response.messages);
-    }
-  } catch (err) {
-    console.error('Error loading messages:', err);
-  }
-};
-  const sendMessage = async () => {
-  if (!newMessage.trim()) return;
+  // Initialize socket connection
+  useFocusEffect(
+    useCallback(() => {
+      let unsubscribeNewMessage: (() => void) | undefined;
+      let unsubscribeSentSuccess: (() => void) | undefined;
+      let unsubscribeSentError: (() => void) | undefined;
 
-  try {
-    const chatId = parseInt(id as string);
-    const response = await ApiService.sendMessage(chatId, newMessage.trim());
-    
-    if (response.success && response.message) {
-      setMessages(prev => [...prev, response.message]);
-      setNewMessage('');
-      
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  } catch (err) {
-    Alert.alert('Error', 'Failed to send message');
-  }
-};
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+      const initializeSocket = async () => {
+        try {
+          await connectSocket();
+          bindSocketLifecycle();
+          await flushOutbox();
 
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isMyMessage = item.senderType === 'patient' && item.senderId === user?.id;
-    
-    return (
-      <View style={[
-        styles.messageContainer,
-        isMyMessage ? styles.myMessage : styles.otherMessage
-      ]}>
-        {!isMyMessage && (
-          <View style={styles.senderInfo}>
-            <Ionicons 
-              name={item.senderType === 'doctor' ? 'medical' : 'business'} 
-              size={16} 
-              color="#2196F3" 
-            />
-            <Text style={styles.senderName}>
-              {item.senderType === 'doctor' ? chat?.name : 'Reception'}
-            </Text>
-          </View>
-        )}
-        <View style={[
-          styles.messageBubble,
-          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
-        ]}>
-          <Text style={[
-            styles.messageText,
-            isMyMessage ? styles.myMessageText : styles.otherMessageText
-          ]}>
-            {item.message}
-          </Text>
-          <Text style={[
-            styles.messageTime,
-            isMyMessage ? styles.myMessageTime : styles.otherMessageTime
-          ]}>
-            {formatTime(item.timestamp)}
-          </Text>
-        </View>
-      </View>
-    );
-  };
+          // Listen for new messages
+          unsubscribeNewMessage = onNewMessage((message) => {
+            if (message.chatId === id) {
+              setMessages((prev) => {
+                // Avoid duplicates
+                if (prev.some(m => m._id === message._id || m.id === message.id)) {
+                  return prev;
+                }
+                return [...prev, { ...message, status: 'delivered' }];
+              });
+              
+              // Mark as read
+              markMessagesRead(id as string);
+              
+              // Scroll to bottom
+              setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+              }, 100);
+            }
+          });
 
-  const renderEmptyChat = () => (
-    <View style={styles.emptyChatContainer}>
-      <Ionicons 
-        name={chat?.type === 'doctor' ? 'medical' : 'chatbubbles'} 
-        size={50} 
-        color="#ccc" 
-      />
-      <Text style={styles.emptyChatTitle}>Start Conversation</Text>
-      <Text style={styles.emptyChatSubtitle}>
-        {chat?.type === 'doctor' 
-          ? 'Send a message to start chatting with your doctor'
-          : 'Send a message to get help from our reception team'
+          // Listen for message sent confirmation
+          unsubscribeSentSuccess = onMessageSentSuccess((data) => {
+            const persistedMessage = data?.message;
+            if (!persistedMessage) return;
+
+            setMessages((prev) => {
+              const index = prev.findIndex(
+                m => m.status === 'sending' && 
+                     m.chatId === persistedMessage.chatId &&
+                     m.messageType === persistedMessage.messageType &&
+                     (m.body || '') === (persistedMessage.body || '')
+              );
+
+              if (index >= 0) {
+                const updated = [...prev];
+                updated[index] = { ...persistedMessage, status: 'sent' };
+                return updated;
+              }
+
+              // Add if not found (shouldn't happen normally)
+              if (!prev.some(m => m._id === persistedMessage._id)) {
+                return [...prev, { ...persistedMessage, status: 'sent' }];
+              }
+
+              return prev;
+            });
+          });
+
+          // Listen for message send errors
+          unsubscribeSentError = onMessageSentError(() => {
+            setMessages((prev) => {
+              const updated = [...prev];
+              for (let i = updated.length - 1; i >= 0; i--) {
+                if (updated[i].status === 'sending') {
+                  updated[i] = { ...updated[i], status: 'failed' };
+                  break;
+                }
+              }
+              return updated;
+            });
+            setSending(false);
+          });
+
+        } catch (error) {
+          console.error('Socket initialization error:', error);
         }
-      </Text>
-    </View>
+      };
+
+      initializeSocket();
+      loadMessages();
+
+      return () => {
+        // Cleanup listeners
+        unsubscribeNewMessage?.();
+        unsubscribeSentSuccess?.();
+        unsubscribeSentError?.();
+        
+        // Clear typing timeout
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+      };
+    }, [id])
   );
 
-  if (!chat) {
+  const loadMessages = async () => {
+    try {
+      setLoading(true);
+      const response = await ApiService.getChatMessages(parseInt(id as string));
+      
+      if (response.success && response.messages) {
+        setMessages(response.messages.map((m: any) => ({
+          ...m,
+          status: m.status || 'delivered',
+        })));
+        
+        // Mark as read
+        markMessagesRead(id as string);
+        
+        // Scroll to bottom
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      Alert.alert('Error', 'Failed to load messages');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || sending) return;
+
+    const messageText = newMessage.trim();
+    setNewMessage('');
+    setSending(true);
+
+    // Stop typing indicator
+    typingStop(id as string);
+
+    // Create optimistic message
+    const optimisticMessage: Message = {
+      _id: `temp-${Date.now()}`,
+      chatId: id as string,
+      senderId: user?.id || 0,
+      senderType: 'patient',
+      messageType: 'text',
+      body: messageText,
+      status: 'sending',
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    // Scroll to bottom
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+
+    try {
+      if (isSocketConnected()) {
+        await socketSendMessage({
+          chatId: id as string,
+          messageType: 'text',
+          body: messageText,
+        });
+      } else {
+        // Fallback to REST API
+        const response = await ApiService.sendMessage(
+          parseInt(id as string),
+          messageText
+        );
+        
+        if (response.success && response.message) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m._id === optimisticMessage._id
+                ? { ...response.message, status: 'sent' }
+                : m
+            )
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === optimisticMessage._id
+            ? { ...m, status: 'failed' }
+            : m
+        )
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleTyping = (text: string) => {
+    setNewMessage(text);
+
+    // Send typing indicator
+    if (text.trim() && isSocketConnected()) {
+      typingStart(id as string);
+
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      // Stop typing after 3 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        typingStop(id as string);
+      }, 3000);
+    }
+  };
+
+  const handleImagePick = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant photo library access');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        quality: 0.8,
+        allowsEditing: false,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await handleFileUpload(result.assets[0], 'image');
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    }
+  };
+
+  const handleDocumentPick = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await handleFileUpload(result.assets[0], 'file');
+      }
+    } catch (error) {
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to pick document');
+    }
+  };
+
+  const handleFileUpload = async (file: any, messageType: 'image' | 'file') => {
+    // Create optimistic message
+    const optimisticMessage: Message = {
+      _id: `temp-${Date.now()}`,
+      chatId: id as string,
+      senderId: user?.id || 0,
+      senderType: 'patient',
+      messageType,
+      hasFile: true,
+      body: file.name || 'File',
+      status: 'sending',
+      timestamp: new Date().toISOString(),
+      file: {
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.mimeType,
+      },
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+
+    try {
+      const uploadedMessage = await uploadFile(id as string, file, '');
+
+      if (uploadedMessage) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === optimisticMessage._id
+              ? { ...uploadedMessage, status: 'sent' }
+              : m
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === optimisticMessage._id
+            ? { ...m, status: 'failed' }
+            : m
+        )
+      );
+      Alert.alert('Error', 'Failed to upload file');
+    }
+  };
+
+  const handleRetry = async (message: Message) => {
+    // Update status to sending
+    setMessages((prev) =>
+      prev.map((m) =>
+        m._id === message._id ? { ...m, status: 'sending' } : m
+      )
+    );
+
+    try {
+      if (message.hasFile) {
+        // Retry file upload would require storing original file
+        Alert.alert('Retry Failed', 'File no longer available. Please send again.');
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === message._id ? { ...m, status: 'failed' } : m
+          )
+        );
+      } else {
+        // Retry text message
+        await socketSendMessage({
+          chatId: message.chatId,
+          messageType: 'text',
+          body: message.body || '',
+        });
+      }
+    } catch (error) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === message._id ? { ...m, status: 'failed' } : m
+        )
+      );
+      Alert.alert('Error', 'Failed to retry message');
+    }
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => (
+    <MessageBubble
+      message={item}
+      isOwn={item.senderId === user?.id}
+      onRetry={handleRetry}
+    />
+  );
+
+  if (loading) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={50} color="#f44336" />
-        <Text style={styles.errorText}>Chat not found</Text>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2196F3" />
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      {/* Chat Header */}
-      <View style={styles.header}>
-        <View style={styles.chatInfo}>
-          <Ionicons 
-            name={chat.type === 'doctor' ? 'medical' : 'business'} 
-            size={24} 
-            color="#2196F3" 
-          />
-          <View style={styles.chatDetails}>
-            <Text style={styles.chatName}>{chat.name}</Text>
-            <Text style={styles.chatStatus}>
-              {chat.type === 'doctor' ? 'Doctor' : 'Hospital Reception'}
-            </Text>
-          </View>
-        </View>
-        {chat.type === 'doctor' && user?.isPremium && (
-          <View style={styles.premiumBadge}>
-            <Ionicons name="star" size={16} color="#FFD700" />
-          </View>
-        )}
-      </View>
-
-      {/* Messages List */}
       <FlatList
         ref={flatListRef}
         data={messages}
         renderItem={renderMessage}
-        keyExtractor={(item) => item.id.toString()}
-        ListEmptyComponent={renderEmptyChat}
-        contentContainerStyle={[
-          styles.messagesList,
-          messages.length === 0 && styles.emptyMessagesList
-        ]}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        keyExtractor={(item) => item._id || item.id?.toString() || ''}
+        contentContainerStyle={styles.messagesList}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
 
-      {/* Message Input */}
       <View style={styles.inputContainer}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            style={styles.textInput}
-            value={newMessage}
-            onChangeText={setNewMessage}
-            placeholder={
-              chat.type === 'doctor' 
-                ? 'Type your message to doctor...' 
-                : 'Type your message...'
-            }
-            multiline
-            maxLength={500}
-          />
-          <TouchableOpacity 
-            style={[
-              styles.sendButton,
-              !newMessage.trim() && styles.sendButtonDisabled
-            ]}
-            onPress={sendMessage}
-            disabled={!newMessage.trim()}
-          >
-            <Ionicons 
-              name="send" 
-              size={20} 
-              color={newMessage.trim() ? '#2196F3' : '#ccc'} 
-            />
-          </TouchableOpacity>
-        </View>
-        
-        {chat.type === 'doctor' && (
-          <Text style={styles.inputHelper}>
-            💡 Be specific about your symptoms for better assistance
-          </Text>
-        )}
+        <TouchableOpacity
+          style={styles.attachButton}
+          onPress={() => {
+            Alert.alert('Send File', 'Choose file type', [
+              { text: 'Image', onPress: handleImagePick },
+              { text: 'Document', onPress: handleDocumentPick },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={28} color="#2196F3" />
+        </TouchableOpacity>
+
+        <TextInput
+          style={styles.textInput}
+          value={newMessage}
+          onChangeText={handleTyping}
+          placeholder="Type a message..."
+          multiline
+          maxLength={1000}
+        />
+
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            (!newMessage.trim() || sending) && styles.sendButtonDisabled,
+          ]}
+          onPress={handleSendMessage}
+          disabled={!newMessage.trim() || sending}
+        >
+          {sending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -231,174 +473,48 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  errorContainer: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#f44336',
-    marginTop: 10,
-  },
-  header: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    elevation: 2,
-  },
-  chatInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  chatDetails: {
-    marginLeft: 15,
-  },
-  chatName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  chatStatus: {
-    fontSize: 14,
-    color: '#2196F3',
-    fontWeight: '500',
-  },
-  premiumBadge: {
-    backgroundColor: '#FFF9C4',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FFD700',
   },
   messagesList: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    flexGrow: 1,
-  },
-  emptyMessagesList: {
-    justifyContent: 'center',
-  },
-  emptyChatContainer: {
-    alignItems: 'center',
-    paddingVertical: 50,
-  },
-  emptyChatTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 15,
-    marginBottom: 8,
-  },
-  emptyChatSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 30,
-  },
-  messageContainer: {
-    marginBottom: 15,
-    maxWidth: '80%',
-  },
-  myMessage: {
-    alignSelf: 'flex-end',
-  },
-  otherMessage: {
-    alignSelf: 'flex-start',
-  },
-  senderInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  senderName: {
-    fontSize: 12,
-    color: '#2196F3',
-    fontWeight: '600',
-    marginLeft: 5,
-  },
-  messageBubble: {
-    paddingHorizontal: 15,
     paddingVertical: 10,
-    borderRadius: 18,
-    maxWidth: '100%',
-  },
-  myMessageBubble: {
-    backgroundColor: '#2196F3',
-    borderBottomRightRadius: 5,
-  },
-  otherMessageBubble: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 5,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  messageText: {
-    fontSize: 15,
-    lineHeight: 20,
-    marginBottom: 5,
-  },
-  myMessageText: {
-    color: '#fff',
-  },
-  otherMessageText: {
-    color: '#333',
-  },
-  messageTime: {
-    fontSize: 11,
-    alignSelf: 'flex-end',
-  },
-  myMessageTime: {
-    color: '#E3F2FD',
-  },
-  otherMessageTime: {
-    color: '#999',
   },
   inputContainer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 25,
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    maxHeight: 100,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    gap: 8,
+  },
+  attachButton: {
+    padding: 4,
   },
   textInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#333',
-    maxHeight: 80,
+    minHeight: 40,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 20,
+    paddingHorizontal: 16,
     paddingVertical: 8,
+    fontSize: 16,
+    backgroundColor: '#f9fafb',
   },
   sendButton: {
-    marginLeft: 10,
-    padding: 5,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sendButtonDisabled: {
-    opacity: 0.5,
-  },
-  inputHelper: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 8,
-    textAlign: 'center',
+    backgroundColor: '#ccc',
   },
 });
