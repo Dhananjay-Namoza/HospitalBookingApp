@@ -45,15 +45,14 @@ interface Message {
   timestamp: string;
 }
 
-export default function DoctorChatScreen() {
-  const { id } = useLocalSearchParams();
+export default function ReceptionChatScreen() {
+  const { id, userType = 'patient' } = useLocalSearchParams();
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [patientInfo, setPatientInfo] = useState<any>(null);
+  const [otherUserInfo, setOtherUserInfo] = useState<any>(null);
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize socket connection
   useFocusEffect(
     useCallback(() => {
       let unsubscribeNewMessage: (() => void) | undefined;
@@ -66,7 +65,6 @@ export default function DoctorChatScreen() {
           bindSocketLifecycle();
           await flushOutbox();
 
-          // Listen for new messages
           unsubscribeNewMessage = onNewMessage((message) => {
             if (message.chatId === id) {
               setMessages((prev) => {
@@ -143,10 +141,7 @@ export default function DoctorChatScreen() {
     try {
       setLoading(true);
       
-      // Load messages and patient info in parallel
-      const [messagesResponse] = await Promise.all([
-        ApiService.getChatMessages(parseInt(id as string)),
-      ]);
+      const messagesResponse = await ApiService.getChatMessages(parseInt(id as string));
       
       if (messagesResponse.success && messagesResponse.messages) {
         setMessages(messagesResponse.messages.map((m: any) => ({
@@ -154,12 +149,11 @@ export default function DoctorChatScreen() {
           status: m.status || 'delivered',
         })));
         
-        // Get patient info from first message if available
+        // Get other user info from first message if available
         const firstMessage = messagesResponse.messages[0];
-        if (firstMessage && firstMessage.senderType === 'patient') {
-          // In real implementation, fetch patient details from API
-          setPatientInfo({
-            name: 'Patient',
+        if (firstMessage) {
+          setOtherUserInfo({
+            name: userType === 'patient' ? 'Patient' : 'Doctor',
             isOnline: false,
           });
         }
@@ -187,7 +181,7 @@ export default function DoctorChatScreen() {
       _id: `temp-${Date.now()}`,
       chatId: id as string,
       senderId: user?.id || 0,
-      senderType: 'doctor',
+      senderType: 'reception',
       messageType: 'text',
       body: messageText,
       status: 'sending',
@@ -240,7 +234,7 @@ export default function DoctorChatScreen() {
       _id: `temp-${Date.now()}`,
       chatId: id as string,
       senderId: user?.id || 0,
-      senderType: 'doctor',
+      senderType: 'reception',
       messageType: type,
       hasFile: true,
       body: file.name || 'File',
@@ -349,10 +343,10 @@ export default function DoctorChatScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ChatHeader
-        name={patientInfo?.name || 'Patient'}
-        isOnline={patientInfo?.isOnline}
-        userType="patient"
-        onInfoPress={() => Alert.alert('Patient Info', 'View patient details')}
+        name={otherUserInfo?.name || 'User'}
+        isOnline={otherUserInfo?.isOnline}
+        userType={userType as any}
+        onInfoPress={() => Alert.alert('User Info', 'View user details')}
       />
 
       <FlatList
