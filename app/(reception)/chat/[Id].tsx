@@ -6,30 +6,27 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useUser } from '../../../context/UserContext';
 import ApiService from '../../../services/api.service';
+import MessageBubble from '../../../components/Chat/MessageBubble';
 import ChatHeader from '../../../components/Chat/ChatHeader';
 import ChatInput from '../../../components/Chat/ChatInput';
-import MessageBubble from '../../../components/Chat/MessageBubble';
-import { 
-  connectSocket, 
-  isSocketConnected 
+import { uploadFile } from '../../../api/files';
+import {
+  connectSocket,
+  isSocketConnected,
 } from '../../../socket/client';
 import {
   sendMessage as socketSendMessage,
   onNewMessage,
   onMessageSentSuccess,
   onMessageSentError,
-  typingStart,
-  typingStop,
   markMessagesRead,
   bindSocketLifecycle,
   flushOutbox,
 } from '../../../socket/events';
-import { uploadFile } from '../../../api/files';
 
 interface Message {
   _id?: string;
@@ -45,26 +42,27 @@ interface Message {
   timestamp: string;
 }
 
-export default function ReceptionChatScreen() {
-  const { id, userType = 'patient' } = useLocalSearchParams();
+export default function ReceptionChatDetailScreen() {
+  const { id, otherUserId, otherUserName, userType } = useLocalSearchParams();
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [otherUserInfo, setOtherUserInfo] = useState<any>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  // Initialize socket and load messages
   useFocusEffect(
     useCallback(() => {
       let unsubscribeNewMessage: (() => void) | undefined;
       let unsubscribeSentSuccess: (() => void) | undefined;
       let unsubscribeSentError: (() => void) | undefined;
 
-      const initializeSocket = async () => {
+      const initializeChat = async () => {
         try {
           await connectSocket();
           bindSocketLifecycle();
           await flushOutbox();
 
+          // Listen for new messages
           unsubscribeNewMessage = onNewMessage((message) => {
             if (message.chatId === id) {
               setMessages((prev) => {
@@ -82,6 +80,7 @@ export default function ReceptionChatScreen() {
             }
           });
 
+          // Listen for sent message confirmation
           unsubscribeSentSuccess = onMessageSentSuccess((data) => {
             const persistedMessage = data?.message;
             if (!persistedMessage) return;
@@ -108,6 +107,7 @@ export default function ReceptionChatScreen() {
             });
           });
 
+          // Listen for message errors
           unsubscribeSentError = onMessageSentError(() => {
             setMessages((prev) => {
               const updated = [...prev];
@@ -126,8 +126,8 @@ export default function ReceptionChatScreen() {
         }
       };
 
-      initializeSocket();
-      loadChatData();
+      initializeChat();
+      loadMessages();
 
       return () => {
         unsubscribeNewMessage?.();
@@ -137,26 +137,16 @@ export default function ReceptionChatScreen() {
     }, [id])
   );
 
-  const loadChatData = async () => {
+  const loadMessages = async () => {
     try {
       setLoading(true);
+      const response = await ApiService.getChatMessages(parseInt(id as string));
       
-      const messagesResponse = await ApiService.getChatMessages(parseInt(id as string));
-      
-      if (messagesResponse.success && messagesResponse.messages) {
-        setMessages(messagesResponse.messages.map((m: any) => ({
+      if (response.success && response.messages) {
+        setMessages(response.messages.map((m: any) => ({
           ...m,
           status: m.status || 'delivered',
         })));
-        
-        // Get other user info from first message if available
-        const firstMessage = messagesResponse.messages[0];
-        if (firstMessage) {
-          setOtherUserInfo({
-            name: userType === 'patient' ? 'Patient' : 'Doctor',
-            isOnline: false,
-          });
-        }
         
         markMessagesRead(id as string);
         
@@ -165,18 +155,14 @@ export default function ReceptionChatScreen() {
         }, 100);
       }
     } catch (error) {
-      console.error('Error loading chat:', error);
-      Alert.alert('Error', 'Failed to load chat');
+      console.error('Error loading messages:', error);
+      Alert.alert('Error', 'Failed to load messages');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSendMessage = async (messageText: string) => {
-    if (!messageText.trim()) return;
-
-    typingStop(id as string);
-
     const optimisticMessage: Message = {
       _id: `temp-${Date.now()}`,
       chatId: id as string,
@@ -218,7 +204,6 @@ export default function ReceptionChatScreen() {
         }
       }
     } catch (error) {
-      console.error('Error sending message:', error);
       setMessages((prev) =>
         prev.map((m) =>
           m._id === optimisticMessage._id
@@ -229,22 +214,28 @@ export default function ReceptionChatScreen() {
     }
   };
 
-  const handleSendFile = async (file: any, type: 'image' | 'file') => {
+  const handleSendImage = async (image: any) => {
     const optimisticMessage: Message = {
       _id: `temp-${Date.now()}`,
       chatId: id as string,
       senderId: user?.id || 0,
       senderType: 'reception',
-      messageType: type,
+      messageType: 'image',
       hasFile: true,
-      body: file.name || 'File',
+      body: 'Image',
       status: 'sending',
       timestamp: new Date().toISOString(),
       file: {
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.mimeType,
+        fileName: image.fileName || 'image.jpg',
+        fileSize: image.fileSize,
+        mimeType: image.mimeType,
       },
+      _originalFile: {
+        uri: image.uri,
+        fileName: image.fileName || 'image.jpg',
+        fileSize: image.fileSize,
+        mimeType: image.mimeType,
+      }
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -254,19 +245,68 @@ export default function ReceptionChatScreen() {
     }, 100);
 
     try {
-      const uploadedMessage = await uploadFile(id as string, file, '');
+      const uploadedMessage = await uploadFile(id as string, image, '');
 
-      if (uploadedMessage) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === optimisticMessage._id
-              ? { ...uploadedMessage, status: 'sent' }
-              : m
-          )
-        );
-      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === optimisticMessage._id
+            ? { ...uploadedMessage, status: 'sent' }
+            : m
+        )
+      );
     } catch (error) {
-      console.error('Error uploading file:', error);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === optimisticMessage._id
+            ? { ...m, status: 'failed' }
+            : m
+        )
+      );
+      Alert.alert('Error', 'Failed to upload image');
+    }
+  };
+
+  const handleSendFile = async (file: any) => {
+    const optimisticMessage: Message = {
+      _id: `temp-${Date.now()}`,
+      chatId: id as string,
+      senderId: user?.id || 0,
+      senderType: 'reception',
+      messageType: 'file',
+      hasFile: true,
+      body: file.name,
+      status: 'sending',
+      timestamp: new Date().toISOString(),
+      file: {
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.mimeType,
+      },
+      _originalFile: {
+        uri: file.uri,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.mimeType,
+      }
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+
+    try {
+      const uploadedMessage = await uploadFile(id as string, file, file.name);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === optimisticMessage._id
+            ? { ...uploadedMessage, status: 'sent' }
+            : m
+        )
+      );
+    } catch (error) {
       setMessages((prev) =>
         prev.map((m) =>
           m._id === optimisticMessage._id
@@ -278,63 +318,63 @@ export default function ReceptionChatScreen() {
     }
   };
 
-  const handleTyping = (isTyping: boolean) => {
-    if (isSocketConnected()) {
-      if (isTyping) {
-        typingStart(id as string);
-      } else {
-        typingStop(id as string);
-      }
-    }
-  };
-
   const handleRetry = async (message: Message) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m._id === message._id ? { ...m, status: 'sending' } : m
-      )
-    );
+    if (!message || message.status !== 'failed') return;
+    
+    setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'sending' } : m));
 
     try {
-      if (message.hasFile) {
-        Alert.alert('Retry Failed', 'File no longer available. Please send again.');
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === message._id ? { ...m, status: 'failed' } : m
-          )
-        );
+      if (["image", "file"].includes(message.messageType) && message.hasFile) {
+        if (message._originalFile?.uri) {
+          const uploadedMessage = await uploadFile(id as string, {
+            uri: message._originalFile.uri,
+            fileName: message._originalFile.fileName,
+            fileSize: message._originalFile.fileSize,
+            mimeType: message._originalFile.mimeType,
+          }, message.body || '');
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m._id === message._id
+                ? { ...uploadedMessage, status: 'sent', _originalFile: message._originalFile }
+                : m
+            )
+          );
+        } else {
+          Alert.alert('Retry Failed', 'Original file no longer available');
+          setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'failed' } : m));
+        }
       } else {
         await socketSendMessage({
           chatId: message.chatId,
-          messageType: 'text',
+          messageType: message.messageType,
           body: message.body || '',
         });
       }
-    } catch (error) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === message._id ? { ...m, status: 'failed' } : m
-        )
-      );
-      Alert.alert('Error', 'Failed to retry message');
+    } catch (e) {
+      setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'failed' } : m));
+      Alert.alert('Retry Failed', String(e?.message || e));
     }
+  };
+
+  const handleInfoPress = () => {
+    Alert.alert(
+      'User Info',
+      `Name: ${otherUserName}\nType: ${userType}\nUser ID: ${otherUserId}`
+    );
   };
 
   const renderMessage = ({ item }: { item: Message }) => (
     <MessageBubble
-      message={item}
+      message={{
+        ...item,
+        onRetry: handleRetry
+      }}
       isOwn={item.senderId === user?.id}
-      onRetry={handleRetry}
+      onPressImage={(msg) => console.log('Image pressed:', msg)}
+      onPressFile={(msg) => console.log('File pressed:', msg)}
     />
   );
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2196F3" />
-      </View>
-    );
-  }
 
   return (
     <KeyboardAvoidingView
@@ -343,10 +383,9 @@ export default function ReceptionChatScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ChatHeader
-        name={otherUserInfo?.name || 'User'}
-        isOnline={otherUserInfo?.isOnline}
-        userType={userType as any}
-        onInfoPress={() => Alert.alert('User Info', 'View user details')}
+        title={otherUserName as string || 'User'}
+        subtitle={`${userType === 'doctor' ? 'Doctor' : 'Patient'}`}
+        onInfoPress={handleInfoPress}
       />
 
       <FlatList
@@ -360,8 +399,9 @@ export default function ReceptionChatScreen() {
 
       <ChatInput
         onSendMessage={handleSendMessage}
+        onSendImage={handleSendImage}
         onSendFile={handleSendFile}
-        onTyping={handleTyping}
+        placeholder="Type a message to staff..."
       />
     </KeyboardAvoidingView>
   );
@@ -371,11 +411,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   messagesList: {
     paddingVertical: 10,
