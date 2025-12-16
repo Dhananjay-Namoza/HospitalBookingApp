@@ -4,6 +4,7 @@ export default function ReceptionLayout() {
     <Stack screenOptions={{headerShown: false}}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
+        <Stack.Screen name="message" />
     </Stack>
   );
 }

@@ -1,24 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  Modal,
-  TextInput,
-  ScrollView
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import {
+    Alert,
+    FlatList,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { Calendar } from 'react-native-calendars';
-import { 
-  mockUnavailabilityMessages, 
-  mockAppointments, 
-  mockDoctorAvailability,
-  mockUsers 
-} from '../../../data/mockData';
-import ApiService from '../../../services/api.service';
+import {
+    mockAppointments,
+    mockDoctorAvailability,
+    mockUsers
+} from '../../data/mockData';
+import ApiService from '../../services/api.service';
 export default function ReceptionMessagesScreen() {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);

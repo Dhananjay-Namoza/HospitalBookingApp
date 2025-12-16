@@ -1,418 +1,236 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React from 'react';
 import {
   View,
+  Text,
   FlatList,
+  TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
+  TextInput,
+  RefreshControl,
 } from 'react-native';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useUser } from '../../../context/UserContext';
-import ApiService from '../../../services/api.service';
-import MessageBubble from '../../../components/Chat/MessageBubble';
-import ChatHeader from '../../../components/Chat/ChatHeader';
-import ChatInput from '../../../components/Chat/ChatInput';
-import { uploadFile } from '../../../api/files';
-import {
-  connectSocket,
-  isSocketConnected,
-} from '../../../socket/client';
-import {
-  sendMessage as socketSendMessage,
-  onNewMessage,
-  onMessageSentSuccess,
-  onMessageSentError,
-  markMessagesRead,
-  bindSocketLifecycle,
-  flushOutbox,
-} from '../../../socket/events';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useChatList } from '../../../hooks/useChatList';
+import { getChatPreview, formatLastMessageTime } from '../../../utils/chatUtils';
 
-interface Message {
-  _id?: string;
-  id?: number;
-  chatId: string;
-  senderId: number | string;
-  senderType: 'patient' | 'doctor' | 'reception';
-  messageType: 'text' | 'image' | 'file';
-  body?: string;
-  hasFile?: boolean;
-  file?: any;
-  status?: 'sending' | 'sent' | 'delivered' | 'failed';
-  timestamp: string;
-}
+export default function PatientChatsScreen() {
+  const {
+    chats,
+    loading,
+    refreshing,
+    searchText,
+    setSearchText,
+    onRefresh,
+    getUnreadCount,
+  } = useChatList({
+    userType: 'patient',
+  });
 
-export default function ReceptionChatDetailScreen() {
-  const { id, otherUserId, otherUserName, userType } = useLocalSearchParams();
-  const { user } = useUser();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
-  const flatListRef = useRef<FlatList>(null);
-
-  // Initialize socket and load messages
-  useFocusEffect(
-    useCallback(() => {
-      let unsubscribeNewMessage: (() => void) | undefined;
-      let unsubscribeSentSuccess: (() => void) | undefined;
-      let unsubscribeSentError: (() => void) | undefined;
-
-      const initializeChat = async () => {
-        try {
-          await connectSocket();
-          bindSocketLifecycle();
-          await flushOutbox();
-
-          // Listen for new messages
-          unsubscribeNewMessage = onNewMessage((message) => {
-            if (message.chatId === id) {
-              setMessages((prev) => {
-                if (prev.some(m => m._id === message._id || m.id === message.id)) {
-                  return prev;
-                }
-                return [...prev, { ...message, status: 'delivered' }];
-              });
-              
-              markMessagesRead(id as string);
-              
-              setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-              }, 100);
-            }
-          });
-
-          // Listen for sent message confirmation
-          unsubscribeSentSuccess = onMessageSentSuccess((data) => {
-            const persistedMessage = data?.message;
-            if (!persistedMessage) return;
-
-            setMessages((prev) => {
-              const index = prev.findIndex(
-                m => m.status === 'sending' && 
-                     m.chatId === persistedMessage.chatId &&
-                     m.messageType === persistedMessage.messageType &&
-                     (m.body || '') === (persistedMessage.body || '')
-              );
-
-              if (index >= 0) {
-                const updated = [...prev];
-                updated[index] = { ...persistedMessage, status: 'sent' };
-                return updated;
-              }
-
-              if (!prev.some(m => m._id === persistedMessage._id)) {
-                return [...prev, { ...persistedMessage, status: 'sent' }];
-              }
-
-              return prev;
-            });
-          });
-
-          // Listen for message errors
-          unsubscribeSentError = onMessageSentError(() => {
-            setMessages((prev) => {
-              const updated = [...prev];
-              for (let i = updated.length - 1; i >= 0; i--) {
-                if (updated[i].status === 'sending') {
-                  updated[i] = { ...updated[i], status: 'failed' };
-                  break;
-                }
-              }
-              return updated;
-            });
-          });
-
-        } catch (error) {
-          console.error('Socket initialization error:', error);
-        }
-      };
-
-      initializeChat();
-      loadMessages();
-
-      return () => {
-        unsubscribeNewMessage?.();
-        unsubscribeSentSuccess?.();
-        unsubscribeSentError?.();
-      };
-    }, [id])
-  );
-
-  const loadMessages = async () => {
-    try {
-      setLoading(true);
-      const response = await ApiService.getChatMessages(parseInt(id as string));
-      
-      if (response.success && response.messages) {
-        setMessages(response.messages.map((m: any) => ({
-          ...m,
-          status: m.status || 'delivered',
-        })));
-        
-        markMessagesRead(id as string);
-        
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }, 100);
-      }
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      Alert.alert('Error', 'Failed to load messages');
-    } finally {
-      setLoading(false);
-    }
+  const handleChatPress = (chat: any) => {
+    router.push({
+      pathname: '/(patient)/chat/[id]',
+      params: { id: chat.chatId }
+    });
   };
 
-  const handleSendMessage = async (messageText: string) => {
-    const optimisticMessage: Message = {
-      _id: `temp-${Date.now()}`,
-      chatId: id as string,
-      senderId: user?.id || 0,
-      senderType: 'reception',
-      messageType: 'text',
-      body: messageText,
-      status: 'sending',
-      timestamp: new Date().toISOString(),
-    };
+  const renderChatItem = ({ item }: { item: any }) => (
+    <TouchableOpacity
+      style={styles.chatItem}
+      onPress={() => handleChatPress(item)}
+    >
+      <View style={styles.avatarContainer}>
+        <View style={styles.avatar}>
+          <Ionicons name="medical" size={24} color="#fff" />
+        </View>
+        {item.otherUser?.isOnline && (
+          <View style={styles.onlineBadge} />
+        )}
+      </View>
 
-    setMessages((prev) => [...prev, optimisticMessage]);
+      <View style={styles.chatContent}>
+        <View style={styles.chatHeader}>
+          <Text style={styles.chatName}>{item.otherUser?.name || 'User'}</Text>
+          <Text style={styles.timestamp}>
+            {formatLastMessageTime(item.lastMessageAt)}
+          </Text>
+        </View>
+        <Text style={styles.lastMessage} numberOfLines={2}>
+          {getChatPreview(item.lastMessage)}
+        </Text>
+      </View>
 
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    try {
-      if (isSocketConnected()) {
-        await socketSendMessage({
-          chatId: id as string,
-          messageType: 'text',
-          body: messageText,
-        });
-      } else {
-        const response = await ApiService.sendMessage(
-          parseInt(id as string),
-          messageText
-        );
-        
-        if (response.success && response.message) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m._id === optimisticMessage._id
-                ? { ...response.message, status: 'sent' }
-                : m
-            )
-          );
-        }
-      }
-    } catch (error) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === optimisticMessage._id
-            ? { ...m, status: 'failed' }
-            : m
-        )
-      );
-    }
-  };
-
-  const handleSendImage = async (image: any) => {
-    const optimisticMessage: Message = {
-      _id: `temp-${Date.now()}`,
-      chatId: id as string,
-      senderId: user?.id || 0,
-      senderType: 'reception',
-      messageType: 'image',
-      hasFile: true,
-      body: 'Image',
-      status: 'sending',
-      timestamp: new Date().toISOString(),
-      file: {
-        fileName: image.fileName || 'image.jpg',
-        fileSize: image.fileSize,
-        mimeType: image.mimeType,
-      },
-      _originalFile: {
-        uri: image.uri,
-        fileName: image.fileName || 'image.jpg',
-        fileSize: image.fileSize,
-        mimeType: image.mimeType,
-      }
-    };
-
-    setMessages((prev) => [...prev, optimisticMessage]);
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    try {
-      const uploadedMessage = await uploadFile(id as string, image, '');
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === optimisticMessage._id
-            ? { ...uploadedMessage, status: 'sent' }
-            : m
-        )
-      );
-    } catch (error) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === optimisticMessage._id
-            ? { ...m, status: 'failed' }
-            : m
-        )
-      );
-      Alert.alert('Error', 'Failed to upload image');
-    }
-  };
-
-  const handleSendFile = async (file: any) => {
-    const optimisticMessage: Message = {
-      _id: `temp-${Date.now()}`,
-      chatId: id as string,
-      senderId: user?.id || 0,
-      senderType: 'reception',
-      messageType: 'file',
-      hasFile: true,
-      body: file.name,
-      status: 'sending',
-      timestamp: new Date().toISOString(),
-      file: {
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.mimeType,
-      },
-      _originalFile: {
-        uri: file.uri,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.mimeType,
-      }
-    };
-
-    setMessages((prev) => [...prev, optimisticMessage]);
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-
-    try {
-      const uploadedMessage = await uploadFile(id as string, file, file.name);
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === optimisticMessage._id
-            ? { ...uploadedMessage, status: 'sent' }
-            : m
-        )
-      );
-    } catch (error) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === optimisticMessage._id
-            ? { ...m, status: 'failed' }
-            : m
-        )
-      );
-      Alert.alert('Error', 'Failed to upload file');
-    }
-  };
-
-  const handleRetry = async (message: Message) => {
-    if (!message || message.status !== 'failed') return;
-    
-    setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'sending' } : m));
-
-    try {
-      if (["image", "file"].includes(message.messageType) && message.hasFile) {
-        if (message._originalFile?.uri) {
-          const uploadedMessage = await uploadFile(id as string, {
-            uri: message._originalFile.uri,
-            fileName: message._originalFile.fileName,
-            fileSize: message._originalFile.fileSize,
-            mimeType: message._originalFile.mimeType,
-          }, message.body || '');
-
-          setMessages((prev) =>
-            prev.map((m) =>
-              m._id === message._id
-                ? { ...uploadedMessage, status: 'sent', _originalFile: message._originalFile }
-                : m
-            )
-          );
-        } else {
-          Alert.alert('Retry Failed', 'Original file no longer available');
-          setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'failed' } : m));
-        }
-      } else {
-        await socketSendMessage({
-          chatId: message.chatId,
-          messageType: message.messageType,
-          body: message.body || '',
-        });
-      }
-    } catch (e) {
-      setMessages(prev => prev.map(m => m._id === message._id ? { ...m, status: 'failed' } : m));
-      Alert.alert('Retry Failed', String(e?.message || e));
-    }
-  };
-
-  const handleInfoPress = () => {
-    Alert.alert(
-      'User Info',
-      `Name: ${otherUserName}\nType: ${userType}\nUser ID: ${otherUserId}`
-    );
-  };
-
-  const renderMessage = ({ item }: { item: Message }) => (
-    <MessageBubble
-      message={{
-        ...item,
-        onRetry: handleRetry
-      }}
-      isOwn={item.senderId === user?.id}
-      onPressImage={(msg) => console.log('Image pressed:', msg)}
-      onPressFile={(msg) => console.log('File pressed:', msg)}
-    />
+      {item.hasUnreadMessages && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.unreadCount}>{item.unreadCount || '•'}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
   );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <ChatHeader
-        title={otherUserName as string || 'User'}
-        subtitle={`${userType === 'doctor' ? 'Doctor' : 'Patient'}`}
-        onInfoPress={handleInfoPress}
-      />
+    <View style={styles.container}>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="#666" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search conversations..."
+          value={searchText}
+          onChangeText={setSearchText}
+        />
+        {searchText ? (
+          <TouchableOpacity onPress={() => setSearchText('')}>
+            <Ionicons name="close-circle" size={20} color="#666" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
+      {/* Stats */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{chats.length}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{getUnreadCount()}</Text>
+          <Text style={styles.statLabel}>Unread</Text>
+        </View>
+      </View>
+
+      {/* Chat List */}
       <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item) => item._id || item.id?.toString() || ''}
-        contentContainerStyle={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+        data={chats}
+        renderItem={renderChatItem}
+        keyExtractor={(item) => item.chatId}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#2196F3']}
+          />
+        }
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
       />
-
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        onSendImage={handleSendImage}
-        onSendFile={handleSendFile}
-        placeholder="Type a message to staff..."
-      />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
+// Add styles from the original file
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  messagesList: {
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginTop: 15,
+    marginBottom: 10,
+    borderRadius: 12,
+    paddingHorizontal: 15,
     paddingVertical: 10,
+    elevation: 2,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#333',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginBottom: 15,
+    borderRadius: 12,
+    padding: 15,
+    elevation: 1,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  listContainer: {
+    paddingBottom: 20,
+  },
+  chatItem: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  onlineBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#4CAF50',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  chatContent: {
+    flex: 1,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  chatName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  timestamp: {
+    fontSize: 12,
+    color: '#666',
+  },
+  lastMessage: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 18,
+  },
+  unreadBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  unreadCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

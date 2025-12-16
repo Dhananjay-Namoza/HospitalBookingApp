@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   TextInput,
@@ -6,8 +6,9 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  ActionSheetIOS,
   Platform,
+  ActionSheetIOS,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,27 +16,38 @@ import * as DocumentPicker from 'expo-document-picker';
 
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
-  onSendFile: (file: any, type: 'image' | 'file') => void;
-  disabled?: boolean;
+  onSendFile?: (file: any, type: 'image' | 'file') => void;
   onTyping?: (isTyping: boolean) => void;
+  disabled?: boolean;
+  placeholder?: string;
 }
 
 export default function ChatInput({
   onSendMessage,
   onSendFile,
-  disabled = false,
   onTyping,
+  disabled = false,
+  placeholder = 'Type a message...',
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const typingTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const [inputHeight, setInputHeight] = useState(40);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleTextChange = (text: string) => {
     setMessage(text);
 
     // Notify typing
-    if (onTyping) {
-      onTyping(text.length > 0);
+    if (onTyping && text.trim()) {
+      onTyping(true);
 
       // Clear previous timeout
       if (typingTimeoutRef.current) {
@@ -49,20 +61,36 @@ export default function ChatInput({
     }
   };
 
-  const handleSend = () => {
-    if (!message.trim() || sending || disabled) return;
+  const handleSend = async () => {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage || sending || disabled) return;
 
     setSending(true);
-    onSendMessage(message.trim());
-    setMessage('');
-    setSending(false);
-
-    if (onTyping) {
-      onTyping(false);
+    
+    try {
+      await onSendMessage(trimmedMessage);
+      setMessage('');
+      setInputHeight(40);
+      
+      if (onTyping) {
+        onTyping(false);
+      }
+      
+      Keyboard.dismiss();
+    } catch (error) {
+      console.error('Error sending message:', error);
+      Alert.alert('Error', 'Failed to send message');
+    } finally {
+      setSending(false);
     }
   };
 
   const handleAttachment = () => {
+    if (!onSendFile) {
+      Alert.alert('Feature unavailable', 'File sharing is not available in this chat');
+      return;
+    }
+
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -99,8 +127,16 @@ export default function ChatInput({
         allowsEditing: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        onSendFile(result.assets[0], 'image');
+      if (!result.canceled && result.assets[0] && onSendFile) {
+        const file = result.assets[0];
+        onSendFile({
+          uri: file.uri,
+          name: `photo_${Date.now()}.jpg`,
+          fileName: `photo_${Date.now()}.jpg`,
+          type: file.type || 'image/jpeg',
+          mimeType: file.type || 'image/jpeg',
+          fileSize: file.fileSize,
+        }, 'image');
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -122,8 +158,16 @@ export default function ChatInput({
         allowsEditing: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        onSendFile(result.assets[0], 'image');
+      if (!result.canceled && result.assets[0] && onSendFile) {
+        const file = result.assets[0];
+        onSendFile({
+          uri: file.uri,
+          name: file.fileName || `image_${Date.now()}.jpg`,
+          fileName: file.fileName || `image_${Date.now()}.jpg`,
+          type: file.type || 'image/jpeg',
+          mimeType: file.type || 'image/jpeg',
+          fileSize: file.fileSize,
+        }, 'image');
       }
     } catch (error) {
       console.error('Image picker error:', error);
@@ -138,8 +182,16 @@ export default function ChatInput({
         copyToCacheDirectory: true,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        onSendFile(result.assets[0], 'file');
+      if (!result.canceled && result.assets[0] && onSendFile) {
+        const file = result.assets[0];
+        onSendFile({
+          uri: file.uri,
+          name: file.name,
+          fileName: file.name,
+          type: file.mimeType || 'application/octet-stream',
+          mimeType: file.mimeType || 'application/octet-stream',
+          fileSize: file.size,
+        }, 'file');
       }
     } catch (error) {
       console.error('Document picker error:', error);
@@ -149,29 +201,43 @@ export default function ChatInput({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={[styles.attachButton, disabled && styles.buttonDisabled]}
-        onPress={handleAttachment}
-        disabled={disabled}
-      >
-        <Ionicons name="add-circle" size={28} color={disabled ? '#ccc' : '#2196F3'} />
-      </TouchableOpacity>
+      {onSendFile && (
+        <TouchableOpacity
+          style={[styles.attachButton, disabled && styles.buttonDisabled]}
+          onPress={handleAttachment}
+          disabled={disabled}
+        >
+          <Ionicons 
+            name="add-circle" 
+            size={28} 
+            color={disabled ? '#ccc' : '#2196F3'} 
+          />
+        </TouchableOpacity>
+      )}
 
       <TextInput
-        style={[styles.input, disabled && styles.inputDisabled]}
+        style={[
+          styles.input,
+          { height: Math.max(40, Math.min(inputHeight, 100)) },
+          disabled && styles.inputDisabled,
+        ]}
         value={message}
         onChangeText={handleTextChange}
-        placeholder="Type a message..."
+        onContentSizeChange={(e) => {
+          setInputHeight(e.nativeEvent.contentSize.height);
+        }}
+        placeholder={placeholder}
         placeholderTextColor="#9ca3af"
         multiline
         maxLength={1000}
-        editable={!disabled}
+        editable={!disabled && !sending}
+        returnKeyType="default"
       />
 
       <TouchableOpacity
         style={[
           styles.sendButton,
-          (!message.trim() || disabled) && styles.buttonDisabled,
+          (!message.trim() || disabled || sending) && styles.buttonDisabled,
         ]}
         onPress={handleSend}
         disabled={!message.trim() || sending || disabled}
@@ -199,6 +265,7 @@ const styles = StyleSheet.create({
   },
   attachButton: {
     padding: 4,
+    marginBottom: 6,
   },
   input: {
     flex: 1,
@@ -208,9 +275,11 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 10,
+    paddingBottom: 10,
     fontSize: 16,
     backgroundColor: '#f9fafb',
+    color: '#333',
   },
   inputDisabled: {
     backgroundColor: '#f3f4f6',
@@ -223,6 +292,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 2,
   },
   buttonDisabled: {
     opacity: 0.5,

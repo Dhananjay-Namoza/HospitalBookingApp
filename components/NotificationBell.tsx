@@ -84,9 +84,9 @@ export default function NotificationBell({ userType }: NotificationBellProps) {
     setShowModal(false);
     
     if (notification.type === 'unavailability' && userType === 'reception') {
-      // Navigate to messages tab to handle unavailability
-      router.push('/(reception)/(tabs)/messages');
+        Alert.alert('Feature coming soon: View unavailability details.');
     }
+     router.push({pathname: '/(reception)/messages'});
   };
 
   const handleMarkAllRead = () => {
