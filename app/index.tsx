@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -14,23 +14,28 @@ export default function Index() {
       const userType = await SecureStore.getItemAsync('userType');
       
       setTimeout(() => {
-        if (userToken) {
+        if (userToken && userType) {
+          // User is authenticated
           if (userType === 'patient') {
             router.replace('/(patient)/(tabs)/home');
           } else if (userType === 'doctor') {
             router.replace('/(doctor)/(tabs)/patients');
-          }else if (userType === 'reception') {
+          } else if (userType === 'reception') {
             router.replace('/(reception)/(tabs)/dashboard');
+          } else {
+            // Unknown user type, go to login
+            router.replace('/auth/login');
+          }
         } else {
+          // No token, go to login
           router.replace('/auth/login');
         }
-      }
-      }, 3000);
+      }, 2000); // Reduced to 2 seconds for better UX
     } catch (error) {
       console.log('Auth check error:', error);
       setTimeout(() => {
         router.replace('/auth/login');
-      }, 3000);
+      }, 2000);
     }
   };
 
@@ -44,9 +49,9 @@ export default function Index() {
       <Text style={styles.title}>MedCare</Text>
       <Text style={styles.subtitle}>Your Health, Our Priority</Text>
       <View style={styles.loadingContainer}>
-        <View style={styles.loadingDot} />
-        <View style={styles.loadingDot} />
-        <View style={styles.loadingDot} />
+        <View style={[styles.loadingDot, styles.dot1]} />
+        <View style={[styles.loadingDot, styles.dot2]} />
+        <View style={[styles.loadingDot, styles.dot3]} />
       </View>
     </View>
   );
@@ -85,6 +90,14 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: '#fff',
     marginHorizontal: 5,
+  },
+  dot1: {
+    opacity: 0.4,
+  },
+  dot2: {
     opacity: 0.7,
+  },
+  dot3: {
+    opacity: 1,
   },
 });
