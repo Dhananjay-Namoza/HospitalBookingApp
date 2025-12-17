@@ -27,7 +27,7 @@ export default function DoctorAppointmentsScreen() {
     let today = 0;
     let upcoming = 0;
     let past = 0;
-    appointments.forEach(apt => {
+    appointments?.forEach(apt => {
       const aptDate = new Date(apt.date);
       const currentDate = new Date();
       if (aptDate.toDateString() === currentDate.toDateString() && apt.status !== 'cancelled') {

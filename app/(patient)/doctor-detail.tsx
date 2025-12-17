@@ -7,7 +7,8 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
-  Linking
+  Linking,
+  Alert
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -48,7 +49,28 @@ export default function DoctorDetailScreen() {
       Linking.openURL(`tel:${doctor.phone}`);
     }
   };
-
+  const handleMessage = async () => {
+    try {
+      const createResponse = await ApiService.createChat({
+        otherUserId: doctor.id,
+      });
+      if (createResponse.success && createResponse.chat) {
+        router.push({
+          pathname: '/(patient)/chat/[id]',
+          params: { 
+            id: createResponse.chat._id.toString() || createResponse.chat.id,
+            chat: JSON.stringify(createResponse.chat),
+            type: 'doctor'
+          }
+        });
+      } else {
+        console.error('Failed to create chat');
+      }
+    } catch (err) {
+      console.error('Error initiating chat:', err);
+      Alert.alert('Error', 'Unable to start chat at this time.');
+    }
+  };
   const renderStars = (rating: number) => {
     const stars = [];
     for (let i = 1; i <= 5; i++) {
@@ -170,9 +192,14 @@ export default function DoctorDetailScreen() {
               <Text style={styles.feeLabel}>Consultation Fee</Text>
             </View>
           </View>
+          <View style={{ flexDirection: 'row', gap: 15 }}>
           <TouchableOpacity style={styles.callButton} onPress={handleCall}>
             <Ionicons name="call" size={20} color="#4CAF50" />
           </TouchableOpacity>
+          <TouchableOpacity style={styles.callButton} onPress={handleMessage}>
+            <Ionicons name="chatbubble-ellipses" size={20} color="#2196F3" />
+          </TouchableOpacity>
+          </View>
         </View>
 
         {/* Tabs */}

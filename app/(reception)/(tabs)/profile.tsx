@@ -1,19 +1,44 @@
-import React, { useState } from 'react';
+import React, {  useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Alert
+  Alert,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-
+import { useFocusEffect } from 'expo-router';
+import ApiService from '../../../services/api.service';
 export default function ReceptionProfileScreen() {
+      const [stats, setStats] = useState({
+        pendingMessages: 0,
+      });
   const { user, logout } = useUser();
-
+   const [pendingMessages, setPendingMessages] = useState([]);
+    const [showNotificationModal, setShowNotificationModal] = useState(false);
+    useFocusEffect(
+      React.useCallback(() => {
+        loadPendingMessages();
+      }, [])
+    );
+    const loadPendingMessages = async () => {
+      try {
+        const response = await ApiService.getReceptionMessages({ status: 'pending' });
+        if (response.success && response.messages) {
+          setPendingMessages(response.messages);
+            setStats({
+                pendingMessages: response.messages.length
+            });
+        }
+        } catch (err) {
+            console.error('Error loading pending messages:', err);
+        }
+    }
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -31,7 +56,64 @@ export default function ReceptionProfileScreen() {
       ]
     );
   };
-
+  const formatTimestamp = (timestamp: string) => {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+  
+      if (diffInHours < 1) {
+        const diffInMinutes = Math.floor(diffInHours * 60);
+        return `${diffInMinutes}m ago`;
+      } else if (diffInHours < 24) {
+        return `${Math.floor(diffInHours)}h ago`;
+      } else {
+        return date.toLocaleDateString();
+      }
+    };
+    const handleMessagePress = (message: any) => {
+        setShowNotificationModal(false);
+        router.push({
+          pathname: '/(reception)/(tabs)/appointments'
+        });
+      };
+    
+      const handleMarkAllRead = async () => {
+        try {
+          for (const message of pendingMessages) {
+            await ApiService.updateReceptionMessage(message.id, { status: 'handled' });
+          }
+          setShowNotificationModal(false);
+          Alert.alert('Success', 'All notifications marked as read');
+        } catch (err) {
+          Alert.alert('Error', 'Failed to update messages');
+        }
+      };
+    const renderNotification = ({ item }: { item: any }) => (
+      <TouchableOpacity
+        style={styles.notificationItem}
+        onPress={() => handleMessagePress(item)}
+      >
+        <View style={styles.notificationIcon}>
+          <Ionicons name="alert-circle" size={24} color="#FF9800" />
+        </View>
+        <View style={styles.notificationContent}>
+          <Text style={styles.notificationTitle}>{item.doctorName} - Unavailability</Text>
+          <Text style={styles.notificationBody} numberOfLines={2}>
+            {item.message}
+          </Text>
+          <Text style={styles.notificationTime}>{formatTimestamp(item.createdAt)}</Text>
+        </View>
+        <View style={styles.unreadDot} />
+      </TouchableOpacity>
+    );
+  
+    const renderEmptyNotifications = () => (
+      <View style={styles.emptyNotifications}>
+        <Ionicons name="notifications-outline" size={60} color="#ccc" />
+        <Text style={styles.emptyTitle}>No notifications</Text>
+        <Text style={styles.emptySubtitle}>You're all caught up!</Text>
+      </View>
+    );
   const renderProfileSection = (title: string, items: any[]) => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -103,7 +185,7 @@ export default function ReceptionProfileScreen() {
           title: 'Doctor Messages',
           subtitle: 'Handle unavailability requests',
           color: '#FF9800',
-          onPress: () => router.push('/(reception)/messages')
+          onPress: () => router.push('/(reception)/(tabs)/chats')
         },
         {
           icon: 'medical-outline',
@@ -128,7 +210,7 @@ export default function ReceptionProfileScreen() {
           title: 'Notifications',
           subtitle: 'Manage notification preferences',
           color: '#FF5722',
-          onPress: () => Alert.alert('Coming Soon', 'Notification settings will be available soon!')
+          onPress: () => setShowNotificationModal(true)
         },
         {
           icon: 'lock-closed-outline',
@@ -173,6 +255,48 @@ export default function ReceptionProfileScreen() {
       <View style={styles.footer}>
         <Text style={styles.versionText}>Reception Portal v1.0.0</Text>
       </View>
+      <Modal
+              visible={showNotificationModal}
+              animationType="slide"
+              transparent={true}
+              onRequestClose={() => setShowNotificationModal(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Notifications</Text>
+                    <View style={styles.modalActions}>
+                      {stats.pendingMessages > 0 && (
+                        <TouchableOpacity
+                          onPress={handleMarkAllRead}
+                          style={styles.markReadButton}
+                        >
+                          <Text style={styles.markReadText}>Mark all read</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => setShowNotificationModal(false)}
+                        style={styles.closeButton}
+                      >
+                        <Ionicons name="close" size={24} color="#666" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+      
+                  <FlatList
+                    data={pendingMessages}
+                    renderItem={renderNotification}
+                    keyExtractor={(item) => item.id.toString()}
+                    ListEmptyComponent={renderEmptyNotifications}
+                    contentContainerStyle={[
+                      styles.notificationList,
+                      pendingMessages.length === 0 && styles.emptyList
+                    ]}
+                    showsVerticalScrollIndicator={false}
+                  />
+                </View>
+              </View>
+            </Modal>
     </ScrollView>
   );
 }
@@ -326,5 +450,113 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 12,
     color: '#999',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  markReadButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#E3F2FD',
+  },
+  markReadText: {
+    fontSize: 13,
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  notificationList: {
+    flexGrow: 1,
+  },
+  emptyList: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#f9fafb',
+  },
+  notificationIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFF3E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  notificationBody: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  notificationTime: {
+    fontSize: 12,
+    color: '#999',
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2196F3',
+    marginLeft: 8,
+    marginTop: 6,
+  },
+  emptyNotifications: {
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#666',
   },
 });

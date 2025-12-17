@@ -58,20 +58,27 @@ const loadPatientData = async () => {
     }
   };
 
-  const handleChat = () => {
-    if (!patient?.isPremium) {
-      Alert.alert(
-        'Premium Required',
-        'This patient needs a premium membership to chat with doctors.',
-        [{ text: 'OK' }]
-      );
-      return;
+  const handleChat = async () => {
+try {
+           const createResponse = await ApiService.createChat({
+             otherUserId: patient.id,
+           });
+           
+           if (createResponse.success && createResponse.chat) {
+             router.push({
+               pathname: '/(doctor)/chat/[id]',
+               params: { 
+                 id: createResponse.chat._id.toString() || createResponse.chat.id,
+                 chat: JSON.stringify(createResponse.chat),
+                 type: 'patient'
+               }
+             });
+           } else {
+             throw new Error('Failed to create chat with reception');
+           } 
+    } catch (err) {
+      Alert.alert('Error', 'Failed to open chat');
     }
-    
-    router.push({
-      pathname: '/(doctor)/chat/[id]',
-      params: { id: patient.id, type: 'patient' }
-    });
   };
 
   const renderOverviewTab = () => (
@@ -362,15 +369,13 @@ const loadPatientData = async () => {
           <TouchableOpacity 
             style={[
               styles.actionButton,
-              !patient.isPremium && styles.actionButtonDisabled
             ]}
             onPress={handleChat}
-            disabled={!patient.isPremium}
           >
             <Ionicons 
               name="chatbubble" 
               size={20} 
-              color={patient.isPremium ? "#2196F3" : "#ccc"} 
+              color={ "#2196F3"} 
             />
           </TouchableOpacity>
         </View>

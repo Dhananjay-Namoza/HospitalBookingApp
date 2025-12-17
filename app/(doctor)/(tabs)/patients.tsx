@@ -116,20 +116,27 @@ const loadPatients = async () => {
     });
   };
 
-  const handleMessagePress = (patient: Patient) => {
-    if (!patient.isPremium) {
-      Alert.alert(
-        'Premium Required',
-        'This patient needs a premium membership to chat with doctors.',
-        [{ text: 'OK' }]
-      );
-      return;
+  const handleMessagePress = async (patient: Patient) => {
+    try {
+           const createResponse = await ApiService.createChat({
+             otherUserId: patient.id,
+           });
+           
+           if (createResponse.success && createResponse.chat) {
+             router.push({
+               pathname: '/(doctor)/chat/[id]',
+               params: { 
+                 id: createResponse.chat._id.toString() || createResponse.chat.id,
+                 chat: JSON.stringify(createResponse.chat),
+                 type: 'patient'
+               }
+             });
+           } else {
+             throw new Error('Failed to create chat with reception');
+           } 
+    } catch (err) {
+      Alert.alert('Error', 'Failed to open chat');
     }
-
-    router.push({
-      pathname: '/(doctor)/chat/[id]',
-      params: { id: patient.id, type: 'patient' }
-    });
   };
 
   const renderPatientCard = ({ item }: { item: Patient }) => (
@@ -202,20 +209,17 @@ const loadPatients = async () => {
         </TouchableOpacity>
         <TouchableOpacity 
           style={[
-            styles.actionButton,
-            !item.isPremium && styles.actionButtonDisabled
+            styles.actionButton
           ]}
           onPress={() => handleMessagePress(item)}
-          disabled={!item.isPremium}
         >
           <Ionicons 
             name="chatbubble-outline" 
             size={18} 
-            color={item.isPremium ? "#2196F3" : "#ccc"} 
+            color={"#2196F3"} 
           />
           <Text style={[
-            styles.actionButtonText,
-            !item.isPremium && styles.actionButtonTextDisabled
+            styles.actionButtonText
           ]}>
             Message
           </Text>
