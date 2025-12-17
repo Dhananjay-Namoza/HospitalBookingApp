@@ -12,11 +12,10 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-import { mockChats } from '../../../data/mockData';
 import ApiService from '../../../services/api.service';
 export default function ChatsScreen() {
   const { user } = useUser();
-  const [chats, setChats] = useState(mockChats);
+  const [chats, setChats] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filteredChats, setFilteredChats] = useState([]);
@@ -63,7 +62,7 @@ const loadChats = async () => {
   };
 
   const handleChatPress = async (chat) => {
-  if (chat.type === 'doctor' && !user?.isPremium) {
+  if (chat.type === 'doctor') {
     Alert.alert(
       'Premium Feature',
       'Chat with doctors is available for premium members only.',
@@ -74,16 +73,11 @@ const loadChats = async () => {
 
   // Create chat if it doesn't exist
   try {
-    const response = await ApiService.createChat({
-      type: chat.type,
-      doctorId: chat.doctorId,
-      patientId: user.id,
-    });
-    
-    if (response.success && response.chat) {
+ 
+    if (chat.chatId) {
       router.push({
         pathname: '/(patient)/chat/[id]',
-        params: { id: response.chat.id }
+        params: { id: chat.chatId, chat: JSON.stringify(chat), type: chat.type}
       });
     }
   } catch (err) {
@@ -118,10 +112,10 @@ const loadChats = async () => {
 
       <View style={styles.chatContent}>
         <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>{item.name}</Text>
+          <Text style={styles.chatName}>{item.otherUser.name}</Text>
           <View style={styles.timeAndBadge}>
             <Text style={styles.timestamp}>
-              {formatTimestamp(item.timestamp)}
+              {formatTimestamp(item.lastMessage?.timestamp)}
             </Text>
             {item.unread > 0 && (
               <View style={styles.unreadBadge}>
@@ -139,10 +133,7 @@ const loadChats = async () => {
             ]} 
             numberOfLines={2}
           >
-            {item.type === 'doctor' && !user?.isPremium 
-              ? '🔒 Premium feature - Upgrade to chat with doctors'
-              : item.lastMessage
-            }
+              {item.lastMessage?.content ?? "No messages yet"}
           </Text>
           {item.type === 'doctor' && (
             <View style={styles.doctorBadge}>
@@ -174,28 +165,17 @@ const loadChats = async () => {
 
   return (
     <View style={styles.container}>
-      {user?.isPremium ? (
+      {user?.isPremium  &&(
         <View style={styles.premiumHeader}>
           <Ionicons name="star" size={16} color="#FFD700" />
           <Text style={styles.premiumText}>Premium Member - Chat with doctors enabled</Text>
-        </View>
-      ) : (
-        <View style={styles.upgradeHeader}>
-          <Ionicons name="lock-closed" size={16} color="#FF9800" />
-          <Text style={styles.upgradeText}>Upgrade to Premium to chat with doctors</Text>
-          <TouchableOpacity 
-            style={styles.upgradeButton}
-            onPress={() => Alert.alert('Upgrade', 'Upgrade feature will be available soon!')}
-          >
-            <Text style={styles.upgradeButtonText}>Upgrade</Text>
-          </TouchableOpacity>
         </View>
       )}
 
       <FlatList
         data={chats}
         renderItem={renderChatItem}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item.chatId.toString()}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl

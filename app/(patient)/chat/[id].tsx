@@ -14,15 +14,15 @@ import ChatInput from '../../../components/Chat/ChatInput';
 import MessageBubble from '../../../components/Chat/MessageBubble';
 import TypingIndicator from '../../../components/Chat/TypingIndicator';
 import { useChat } from '../../../hooks/useChat';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 export default function PatientChatScreen() {
-  const { id } = useLocalSearchParams();
+  const { id ,chat} = useLocalSearchParams();
   const { user } = useUser();
+  const chatparams = chat ? JSON.parse(chat) : null;
   const [doctorInfo, setDoctorInfo] = useState({
-    name: 'Doctor',
-    isOnline: false,
+    name: chatparams?.chat?.otherUser?.name || chatparams?.otherUser?.name || 'Doctor',
+    isOnline: chatparams?.chat?.otherUser?.isOnline || chatparams?.otherUser?.isOnline || false,
   });
-
   const {
     messages,
     loading,
@@ -69,6 +69,7 @@ export default function PatientChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      <SafeAreaView style={styles.container}>
       <ChatHeader
         name={doctorInfo.name}
         isOnline={doctorInfo.isOnline}
@@ -96,6 +97,7 @@ export default function PatientChatScreen() {
         onSendFile={handleSendFile}
         onTyping={handleTyping}
       />
+      </SafeAreaView>
     </KeyboardAvoidingView>
   );
 }

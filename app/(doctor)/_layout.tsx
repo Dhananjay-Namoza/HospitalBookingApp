@@ -16,8 +16,6 @@ export default function DoctorLayout() {
       <Stack.Screen 
         name="chat/[id]" 
         options={{ 
-          headerShown: true,
-          title: 'Patient Chat',
           headerStyle: { backgroundColor: '#2196F3' },
           headerTintColor: '#fff'
         }} 

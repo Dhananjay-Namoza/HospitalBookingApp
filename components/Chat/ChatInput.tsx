@@ -13,7 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-
+import mime from "react-native-mime-types";
+import * as FileSystem from "expo-file-system/legacy";
 interface ChatInputProps {
   onSendMessage: (message: string) => void;
   onSendFile?: (file: any, type: 'image' | 'file') => void;
@@ -41,7 +42,42 @@ export default function ChatInput({
       }
     };
   }, []);
+   function normalizePickedImage(asset: any) {
+  const uri = asset.uri;
+  const mimeType =
+    asset.mimeType ||
+    mime.lookup(uri) ||
+    "image/jpeg";
 
+  const name =
+    asset.fileName ||
+    `IMG_${Date.now()}.${mime.extension(mimeType) || "jpg"}`;
+
+  return {
+    uri,
+    fileName: name,
+    name,
+    type: mimeType,
+    mimeType,
+    fileSize: asset.fileSize ?? 0,
+  };
+}
+async function ensureFilePath(uri: string): Promise<string> {
+  if (!uri.startsWith("content://")) {
+    return uri; // already file://
+  }
+
+  // copy the content:// file into app's cache as a real file
+  const fileExt = uri.split(".").pop() || "jpg";
+  const dest = `${FileSystem.cacheDirectory}picked_${Date.now()}.${fileExt}`;
+
+  await FileSystem.copyAsync({
+    from: uri,
+    to: dest,
+  });
+
+  return dest;
+}
   const handleTextChange = (text: string) => {
     setMessage(text);
 
@@ -128,15 +164,9 @@ export default function ChatInput({
       });
 
       if (!result.canceled && result.assets[0] && onSendFile) {
-        const file = result.assets[0];
-        onSendFile({
-          uri: file.uri,
-          name: `photo_${Date.now()}.jpg`,
-          fileName: `photo_${Date.now()}.jpg`,
-          type: file.type || 'image/jpeg',
-          mimeType: file.type || 'image/jpeg',
-          fileSize: file.fileSize,
-        }, 'image');
+        const asset = result.assets[0];
+const file = normalizePickedImage(asset);
+onSendFile(file, 'image');
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -159,15 +189,9 @@ export default function ChatInput({
       });
 
       if (!result.canceled && result.assets[0] && onSendFile) {
-        const file = result.assets[0];
-        onSendFile({
-          uri: file.uri,
-          name: file.fileName || `image_${Date.now()}.jpg`,
-          fileName: file.fileName || `image_${Date.now()}.jpg`,
-          type: file.type || 'image/jpeg',
-          mimeType: file.type || 'image/jpeg',
-          fileSize: file.fileSize,
-        }, 'image');
+        const asset = result.assets[0];
+const file = normalizePickedImage(asset);
+onSendFile(file, 'image');
       }
     } catch (error) {
       console.error('Image picker error:', error);

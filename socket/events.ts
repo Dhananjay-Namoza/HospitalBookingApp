@@ -12,12 +12,22 @@ let outboxQueue: any[] = [];
  */
 async function ensureOutboxDir() {
   try {
-    const dirInfo = await FileSystem.getInfoAsync(OUTBOX_DIR);
-    if (!dirInfo.exists) {
+    // Check if directory exists using the new API
+    const dirExists = await FileSystem.StorageAccessFramework.readDirectoryAsync(OUTBOX_DIR)
+      .then(() => true)
+      .catch(() => false);
+    
+    if (!dirExists) {
       await FileSystem.makeDirectoryAsync(OUTBOX_DIR, { intermediates: true });
     }
   } catch (error) {
-    console.error('Error ensuring outbox directory:', error);
+    // If the above doesn't work, try the simpler approach
+    try {
+      await FileSystem.makeDirectoryAsync(OUTBOX_DIR, { intermediates: true });
+    } catch (mkdirError) {
+      // Directory might already exist, which is fine
+      console.error('Error ensuring outbox directory:', error);
+    }
   }
 }
 
@@ -29,15 +39,15 @@ async function loadOutbox() {
   outboxLoaded = true;
   
   try {
-    const info = await FileSystem.getInfoAsync(OUTBOX_PATH);
-    if (!info.exists) {
+    // Check if file exists by trying to read it
+    try {
+      const json = await FileSystem.readAsStringAsync(OUTBOX_PATH);
+      outboxQueue = JSON.parse(json || '[]');
+      console.log(`Loaded ${outboxQueue.length} messages from outbox`);
+    } catch (readError) {
+      // File doesn't exist or is unreadable
       outboxQueue = [];
-      return;
     }
-    
-    const json = await FileSystem.readAsStringAsync(OUTBOX_PATH);
-    outboxQueue = JSON.parse(json || '[]');
-    console.log(`Loaded ${outboxQueue.length} messages from outbox`);
   } catch (error) {
     console.error('Error loading outbox:', error);
     outboxQueue = [];

@@ -13,14 +13,12 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
-// import { useToast } from '../../../components/Toast/ToastContext';
 import ApiService from '../../../services/api.service';
+
+const RECEPTION_USER_ID = 201;
 
 export default function ProfileScreen() {
   const { user, setUser, logout } = useUser();
-  // const { success, error: showError } = useToast();
-  const success = (msg: string) => Alert.alert('Success', msg);
-  const showError = (msg: string) => Alert.alert('Error', msg);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -76,13 +74,64 @@ export default function ProfileScreen() {
       if (response.success) {
         setUser(response.user);
         setEditing(false);
-        success('Profile updated successfully!');
+        Alert.alert('Success', 'Profile updated successfully!');
       } else {
         throw new Error(response.message || 'Failed to update profile');
       }
     } catch (err: any) {
       console.error('Error updating profile:', err);
-      showError(err.message || 'Failed to update profile');
+      Alert.alert('Error', err.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContactReception = async () => {
+    try {
+      setLoading(true);
+      console.log('Contacting reception...');
+      // Check if chat with reception already exists
+      const chatsResponse = await ApiService.getChats();
+      
+      if (chatsResponse.success && chatsResponse.chats) {
+        const receptionChat = chatsResponse.chats.find(
+          (chat: any) => chat.otherUser?._id === RECEPTION_USER_ID || 
+                         chat.otherUser?.id === RECEPTION_USER_ID
+        );
+        if (receptionChat) {
+          router.push({
+            pathname: '/(patient)/chat/[id]',
+            params: { 
+              id: receptionChat.chatId || receptionChat.id,
+              chat: JSON.stringify(receptionChat),
+              type: 'reception'
+            }
+          });
+          return;
+        }
+      }
+      console.log('No existing chat with reception found, creating new one...');
+      // Create new chat with reception
+      const createResponse = await ApiService.createChat({
+        otherUserId: RECEPTION_USER_ID,
+      });
+      console.log('Create chat response:', createResponse);
+      if (createResponse.success && createResponse.chat) {
+        router.push({
+          pathname: '/(patient)/chat/[id]',
+          params: { 
+            id: createResponse.chat._id || createResponse.chat.id,
+            chat: JSON.stringify(createResponse),
+            type: 'reception'
+          }
+        });
+      } else {
+        throw new Error('Failed to create chat with reception');
+      }
+      
+    } catch (error: any) {
+      console.error('Error contacting reception:', error);
+      Alert.alert('Error', error.message || 'Failed to contact reception');
     } finally {
       setLoading(false);
     }
@@ -154,6 +203,19 @@ export default function ProfileScreen() {
             <Text style={styles.premiumText}>Premium Member</Text>
           </View>
         )}
+      </View>
+
+      {/* Contact Reception Button */}
+      <View style={styles.contactReceptionContainer}>
+        <TouchableOpacity 
+          style={styles.contactReceptionButton}
+          onPress={handleContactReception}
+          disabled={loading}
+        >
+          <Ionicons name="chatbubble-ellipses" size={20} color="#2196F3" />
+          <Text style={styles.contactReceptionText}>Contact Reception</Text>
+          {loading && <ActivityIndicator size="small" color="#2196F3" style={styles.loadingIcon} />}
+        </TouchableOpacity>
       </View>
 
       {/* Personal Information */}
@@ -369,6 +431,30 @@ const styles = StyleSheet.create({
     color: '#F57F17',
     fontWeight: 'bold',
     marginLeft: 4,
+  },
+  contactReceptionContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  contactReceptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 1,
+  },
+  contactReceptionText: {
+    color: '#2196F3',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  loadingIcon: {
+    marginLeft: 8,
   },
   section: {
     backgroundColor: '#fff',

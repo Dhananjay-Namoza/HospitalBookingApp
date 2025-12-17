@@ -141,14 +141,6 @@ export default function ReceptionChatsScreen() {
         <View style={styles.chatHeader}>
           <View style={styles.nameContainer}>
             <Text style={styles.chatName}>{item.otherUser?.name || 'Unknown'}</Text>
-            <View style={[
-              styles.typeBadge,
-              { backgroundColor: item.otherUser?.type === 'doctor' ? '#2196F3' : '#4CAF50' }
-            ]}>
-              <Text style={styles.typeBadgeText}>
-                {item.otherUser?.type === 'doctor' ? 'Doctor' : 'Patient'}
-              </Text>
-            </View>
           </View>
           <View style={styles.timeAndBadge}>
             <Text style={styles.timestamp}>
@@ -163,7 +155,7 @@ export default function ReceptionChatsScreen() {
         </View>
 
         <Text style={styles.lastMessage} numberOfLines={2}>
-          {item.lastMessage?.body || 'No messages yet'}
+          {item.lastMessage?.content || 'No messages yet'}
         </Text>
       </View>
     </TouchableOpacity>

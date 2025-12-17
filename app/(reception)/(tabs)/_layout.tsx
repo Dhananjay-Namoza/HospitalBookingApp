@@ -41,11 +41,11 @@ export default function ReceptionLayout() {
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="chats"
         options={{
-          title: 'Messages',
+          title: 'Chats',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="mail" size={size} color={color} />
+            <Ionicons name="chatbubbles" size={size} color={color} />
           ),
         }}
       />

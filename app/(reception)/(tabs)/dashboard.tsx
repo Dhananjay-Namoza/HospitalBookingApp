@@ -6,10 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  Alert
+  Alert,
+  Modal,
+  FlatList
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 import ApiService from '../../../services/api.service';
 
 export default function ReceptionDashboardScreen() {
@@ -25,9 +28,12 @@ export default function ReceptionDashboardScreen() {
   const [pendingMessages, setPendingMessages] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
+    const interval = setInterval(loadDashboardData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
   }, []);
 
   const loadDashboardData = async () => {
@@ -57,11 +63,10 @@ export default function ReceptionDashboardScreen() {
       }
 
       if (messagesResponse.success && messagesResponse.messages) {
-        setPendingMessages(messagesResponse.messages.slice(0, 3));
+        setPendingMessages(messagesResponse.messages);
       }
     } catch (err) {
       console.error('Error loading dashboard:', err);
-      Alert.alert('Error', 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -71,6 +76,26 @@ export default function ReceptionDashboardScreen() {
     setRefreshing(true);
     await loadDashboardData();
     setRefreshing(false);
+  };
+
+  const handleMessagePress = (message: any) => {
+    setShowNotificationModal(false);
+    router.push({
+      pathname: '/(reception)/(tabs)/appointments'
+    });
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      for (const message of pendingMessages) {
+        await ApiService.updateReceptionMessage(message.id, { status: 'handled' });
+      }
+      await loadDashboardData();
+      setShowNotificationModal(false);
+      Alert.alert('Success', 'All notifications marked as read');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update messages');
+    }
   };
 
   const renderStatCard = (title: string, value: number, icon: string, color: string) => (
@@ -94,6 +119,48 @@ export default function ReceptionDashboardScreen() {
     </TouchableOpacity>
   );
 
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffInHours < 1) {
+      const diffInMinutes = Math.floor(diffInHours * 60);
+      return `${diffInMinutes}m ago`;
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
+  const renderNotification = ({ item }: { item: any }) => (
+    <TouchableOpacity
+      style={styles.notificationItem}
+      onPress={() => handleMessagePress(item)}
+    >
+      <View style={styles.notificationIcon}>
+        <Ionicons name="alert-circle" size={24} color="#FF9800" />
+      </View>
+      <View style={styles.notificationContent}>
+        <Text style={styles.notificationTitle}>{item.doctorName} - Unavailability</Text>
+        <Text style={styles.notificationBody} numberOfLines={2}>
+          {item.message}
+        </Text>
+        <Text style={styles.notificationTime}>{formatTimestamp(item.createdAt)}</Text>
+      </View>
+      <View style={styles.unreadDot} />
+    </TouchableOpacity>
+  );
+
+  const renderEmptyNotifications = () => (
+    <View style={styles.emptyNotifications}>
+      <Ionicons name="notifications-outline" size={60} color="#ccc" />
+      <Text style={styles.emptyTitle}>No notifications</Text>
+      <Text style={styles.emptySubtitle}>You're all caught up!</Text>
+    </View>
+  );
+
   return (
     <ScrollView
       style={styles.container}
@@ -101,17 +168,20 @@ export default function ReceptionDashboardScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2196F3']} />
       }
     >
-      {/* Header */}
+      {/* Header with Notification Bell */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Reception Dashboard</Text>
           <Text style={styles.headerSubtitle}>Manage appointments and requests</Text>
         </View>
-        <TouchableOpacity style={styles.notificationButton}>
-          <Ionicons name="notifications-outline" size={24} color="#333" />
+        <TouchableOpacity 
+          style={styles.notificationButton}
+          onPress={() => setShowNotificationModal(true)}
+        >
+          <Ionicons name="notifications-outline" size={26} color="#333" />
           {stats.pendingMessages > 0 && (
             <View style={styles.notificationBadge}>
-              <Text style={styles.badgeText}>{stats.pendingMessages}</Text>
+              <View style={styles.blueDot} />
             </View>
           )}
         </TouchableOpacity>
@@ -142,8 +212,8 @@ export default function ReceptionDashboardScreen() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.quickActionsGrid}>
           {renderQuickAction('View All Appointments', 'calendar', () => router.push('/(reception)/(tabs)/appointments'), '#2196F3')}
-          {renderQuickAction('Pending Messages', 'mail', () => router.push('/(reception)/(tabs)/messages'), '#FF9800')}
-          {renderQuickAction('Add Doctor', 'person-add', () => router.push('/(reception)/(tabs)/doctors'), '#4CAF50')}
+          {renderQuickAction('Chat Messages', 'chatbubbles', () => router.push('/(reception)/(tabs)/chats'), '#FF9800')}
+          {renderQuickAction('Manage Doctors', 'person-add', () => router.push('/(reception)/(tabs)/doctors'), '#4CAF50')}
           {renderQuickAction('Reports', 'stats-chart', () => Alert.alert('Coming Soon', 'Reports feature will be available soon!'), '#9C27B0')}
         </View>
       </View>
@@ -175,29 +245,49 @@ export default function ReceptionDashboardScreen() {
         )}
       </View>
 
-      {/* Pending Messages */}
-      {pendingMessages.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Pending Messages</Text>
-            <TouchableOpacity onPress={() => router.push('/(reception)/(tabs)/messages')}>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          {pendingMessages.map((message: any) => (
-            <View key={message.id} style={styles.messageItem}>
-              <View style={styles.messageIcon}>
-                <Ionicons name="medical" size={20} color="#FF9800" />
+      {/* Notification Modal */}
+      <Modal
+        visible={showNotificationModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNotificationModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Notifications</Text>
+              <View style={styles.modalActions}>
+                {stats.pendingMessages > 0 && (
+                  <TouchableOpacity
+                    onPress={handleMarkAllRead}
+                    style={styles.markReadButton}
+                  >
+                    <Text style={styles.markReadText}>Mark all read</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => setShowNotificationModal(false)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
               </View>
-              <View style={styles.messageContent}>
-                <Text style={styles.messageDoctorName}>{message.doctorName}</Text>
-                <Text style={styles.messageText} numberOfLines={2}>{message.message}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#666" />
             </View>
-          ))}
+
+            <FlatList
+              data={pendingMessages}
+              renderItem={renderNotification}
+              keyExtractor={(item) => item.id.toString()}
+              ListEmptyComponent={renderEmptyNotifications}
+              contentContainerStyle={[
+                styles.notificationList,
+                pendingMessages.length === 0 && styles.emptyList
+              ]}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
         </View>
-      )}
+      </Modal>
     </ScrollView>
   );
 }
@@ -240,25 +330,19 @@ const styles = StyleSheet.create({
   },
   notificationBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#f44336',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    top: 6,
+    right: 6,
   },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+  blueDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2196F3',
   },
   section: {
     backgroundColor: '#fff',
     margin: 15,
     padding: 20,
-    flexDirection: 'column',
     borderRadius: 12,
     elevation: 1,
   },
@@ -368,14 +452,70 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textTransform: 'uppercase',
   },
-  messageItem: {
+  emptyText: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 14,
+    paddingVertical: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    justifyContent: 'space-between',
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  messageIcon: {
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  markReadButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#E3F2FD',
+  },
+  markReadText: {
+    fontSize: 13,
+    color: '#2196F3',
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  notificationList: {
+    flexGrow: 1,
+  },
+  emptyList: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#f9fafb',
+  },
+  notificationIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -384,24 +524,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  messageContent: {
+  notificationContent: {
     flex: 1,
   },
-  messageDoctorName: {
+  notificationTitle: {
     fontSize: 15,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  messageText: {
-    fontSize: 13,
+  notificationBody: {
+    fontSize: 14,
     color: '#666',
     lineHeight: 18,
+    marginBottom: 4,
   },
-  emptyText: {
-    textAlign: 'center',
+  notificationTime: {
+    fontSize: 12,
     color: '#999',
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2196F3',
+    marginLeft: 8,
+    marginTop: 6,
+  },
+  emptyNotifications: {
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
     fontSize: 14,
-    paddingVertical: 20,
+    color: '#666',
   },
 });

@@ -59,7 +59,7 @@ export async function uploadFile(
     });
 
     const data = await response.json();
-
+    console.log('File upload response:', data);
     if (!response.ok || data.success === false) {
       const errorMsg = data.error || data.message || `HTTP ${response.status}`;
       

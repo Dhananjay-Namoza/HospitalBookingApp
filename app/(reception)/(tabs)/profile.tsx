@@ -96,7 +96,7 @@ export default function ReceptionProfileScreen() {
           title: 'Appointments',
           subtitle: 'View and manage all appointments',
           color: '#2196F3',
-          onPress: () => router.push('/(reception)/appointments')
+          onPress: () => router.push('/(reception)/(tabs)/appointments')
         },
         {
           icon: 'mail-outline',
@@ -110,7 +110,7 @@ export default function ReceptionProfileScreen() {
           title: 'Doctors',
           subtitle: 'Manage doctor profiles',
           color: '#4CAF50',
-          onPress: () => router.push('/(reception)/doctors')
+          onPress: () => router.push('/(reception)/(tabs)/doctors')
         }
       ])}
 

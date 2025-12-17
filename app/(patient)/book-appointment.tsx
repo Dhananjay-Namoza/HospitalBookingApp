@@ -49,8 +49,8 @@ export default function BookAppointmentScreen() {
     try {
       setFetchingData(true);
       const [doctorResponse, availabilityResponse] = await Promise.all([
-        ApiService.getDoctorById(parseInt(doctorId as string)),
-        ApiService.getDoctorAvailability(parseInt(doctorId as string))
+        ApiService.getDoctorById(doctorId),
+        ApiService.getDoctorAvailability(doctorId)
       ]);
 
       if (doctorResponse.success && doctorResponse.doctor) {

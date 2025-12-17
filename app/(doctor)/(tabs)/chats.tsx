@@ -11,14 +11,17 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { mockChats, mockUsers } from '../../../data/mockData';
 import ApiService from '../../../services/api.service';
-export default function DoctorChatsScreen() {
+import { useUser } from '../../../context/UserContext';
+
+export default function PatientChatsScreen() {
+  const { user } = useUser();
   const [chats, setChats] = useState([]);
   const [filteredChats, setFilteredChats] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(false);
+
   useEffect(() => {
     loadChats();
   }, []);
@@ -27,32 +30,35 @@ export default function DoctorChatsScreen() {
     filterChats();
   }, [searchText, chats]);
 
-const loadChats = async () => {
+ const loadChats = async () => {
   try {
     setLoading(true);
     const response = await ApiService.getChats();
-    
-    if (response.success && response.chats) {
-      setChats(response.chats);
-      setFilteredChats(response.chats);
-    }
+
+    const list = Array.isArray(response.chats) ? response.chats : [];
+
+    setChats(list);
+    setFilteredChats(list);
   } catch (err) {
     console.error('Error loading chats:', err);
+    setChats([]);
+    setFilteredChats([]);
   } finally {
     setLoading(false);
   }
 };
 
   const filterChats = () => {
-    if (searchText === '') {
-      setFilteredChats(chats);
-    } else {
-      const filtered = chats.filter(chat =>
-        chat.name.toLowerCase().includes(searchText.toLowerCase())
-      );
-      setFilteredChats(filtered);
-    }
-  };
+  if (searchText === '') {
+    setFilteredChats(chats);
+  } else {
+    const filtered = chats.filter(chat =>
+      chat?.otherUser?.name?.toLowerCase().includes(searchText.toLowerCase())
+    );
+    setFilteredChats(filtered);
+  }
+};
+
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -62,7 +68,7 @@ const loadChats = async () => {
     }, 1000);
   };
 
-  const formatTimestamp = (timestamp: string) => {
+  const formatTimestamp = (timestamp) => {
     const date = new Date(timestamp);
     const now = new Date();
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
@@ -79,8 +85,8 @@ const loadChats = async () => {
 
   const handleChatPress = (chat) => {
     router.push({
-      pathname: '/(doctor)/chat/[id]',
-      params: { id: chat.patientId, type: 'patient' }
+      pathname: '/(patient)/chat/[id]',
+      params: { id: chat.chatId, chat: JSON.stringify(chat) }
     });
   };
 
@@ -91,10 +97,16 @@ const loadChats = async () => {
       activeOpacity={0.7}
     >
       <View style={styles.avatarContainer}>
-        <View style={[styles.avatar, styles.defaultAvatar]}>
-          <Ionicons name="person" size={24} color="#fff" />
-        </View>
-        {item.isPremium && (
+        {item?.otherUser?.avatar ? (
+          <Image source={{ uri: item.otherUser.avatar }} style={styles.avatar} />
+        ) : (
+          <View style={[styles.avatar, styles.defaultAvatar]}>
+            <Ionicons name="person" size={24} color="#fff" />
+          </View>
+        )}
+
+        {/* Premium Badge (same as doctor screen) */}
+        {item?.isPremium && (
           <View style={styles.premiumBadge}>
             <Ionicons name="star" size={12} color="#FFD700" />
           </View>
@@ -103,26 +115,28 @@ const loadChats = async () => {
 
       <View style={styles.chatContent}>
         <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>{item.name}</Text>
+          <Text style={styles.chatName}>{item?.otherUser?.name}</Text>
+
           <View style={styles.timeAndBadge}>
             <Text style={styles.timestamp}>
-              {formatTimestamp(item.timestamp)}
+              {formatTimestamp(item?.lastMessageAt)}
             </Text>
-            {item.unread > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadCount}>{item.unread}</Text>
-              </View>
+
+            {item?.hasUnreadMessages && (
+              <View style={styles.unreadBadge} />
             )}
           </View>
         </View>
 
         <View style={styles.messageContainer}>
           <Text style={styles.lastMessage} numberOfLines={2}>
-            {item.lastMessage}
+            {item?.lastMessage?.content || ''}
           </Text>
-          <View style={styles.patientBadge}>
-            <Ionicons name="person" size={12} color="#2196F3" />
-            <Text style={styles.patientBadgeText}>Patient</Text>
+
+          {/* Doctor badge for patient view */}
+          <View style={styles.doctorBadge}>
+            <Ionicons name="medical" size={12} color="#2196F3" />
+            <Text style={styles.doctorBadgeText}>Doctor</Text>
           </View>
         </View>
       </View>
@@ -132,25 +146,27 @@ const loadChats = async () => {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="chatbubbles-outline" size={60} color="#ccc" />
-      <Text style={styles.emptyTitle}>No patient messages</Text>
+      <Text style={styles.emptyTitle}>No conversations yet</Text>
       <Text style={styles.emptySubtitle}>
-        Patient messages will appear here when they reach out to you
+        Start a conversation with hospital staff or your doctor.
       </Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* Search Header */}
+      {/* Search Header (same as doctor) */}
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+
           <TextInput
             style={styles.searchInput}
-            placeholder="Search patient messages..."
+            placeholder="Search messages..."
             value={searchText}
             onChangeText={setSearchText}
           />
+
           {searchText ? (
             <TouchableOpacity onPress={() => setSearchText('')}>
               <Ionicons name="close-circle" size={20} color="#666" />
@@ -162,18 +178,20 @@ const loadChats = async () => {
       {/* Stats Header */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{chats.length}</Text>
+          <Text style={styles.statNumber}>{chats?.length}</Text>
           <Text style={styles.statLabel}>Total Chats</Text>
         </View>
+
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-                      {chats.filter(c => c.unread > 0).length}
+            {(chats || []).filter(c => c.hasUnreadMessages).length}
           </Text>
           <Text style={styles.statLabel}>Unread</Text>
         </View>
+
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>
-            {chats.filter(c => c.isPremium).length}
+            {(chats || []).filter(c => c.isPremium).length}
           </Text>
           <Text style={styles.statLabel}>Premium</Text>
         </View>
@@ -182,7 +200,7 @@ const loadChats = async () => {
       <FlatList
         data={filteredChats}
         renderItem={renderChatItem}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item.chatId.toString()}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl
@@ -193,7 +211,7 @@ const loadChats = async () => {
         }
         contentContainerStyle={[
           styles.listContainer,
-          filteredChats.length === 0 && styles.emptyList
+          filteredChats?.length === 0 && styles.emptyList
         ]}
         showsVerticalScrollIndicator={false}
       />
@@ -202,90 +220,55 @@ const loadChats = async () => {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
+  container: { flex: 1, backgroundColor: '#f8f9fa' },
+
+  /* --- Search Bar --- */
   searchContainer: {
     backgroundColor: '#fff',
     paddingHorizontal: 20,
     paddingVertical: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    elevation: 2
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8f9fa',
     borderRadius: 12,
-    paddingHorizontal: 15,
-  },
-  searchIcon: {
-    marginRight: 10,
+    paddingHorizontal: 15
   },
   searchInput: {
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#333',
+    color: '#333'
   },
+
+  /* --- Stats Header --- */
   statsContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     paddingVertical: 15,
     marginBottom: 10,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    elevation: 1
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  listContainer: {
-    flexGrow: 1,
-  },
-  emptyList: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
+  statItem: { flex: 1, alignItems: 'center' },
+  statNumber: { fontSize: 20, fontWeight: 'bold', color: '#2196F3' },
+  statLabel: { fontSize: 12, color: '#666', fontWeight: '500' },
+
+  /* --- Chat Row --- */
   chatItem: {
     backgroundColor: '#fff',
     flexDirection: 'row',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f0f0f0'
   },
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 16,
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
+  avatarContainer: { position: 'relative', marginRight: 16 },
+  avatar: { width: 50, height: 50, borderRadius: 25 },
   defaultAvatar: {
     backgroundColor: '#2196F3',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   premiumBadge: {
     position: 'absolute',
@@ -298,90 +281,61 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: '#fff'
   },
-  chatContent: {
-    flex: 1,
-  },
+
+  chatContent: { flex: 1 },
   chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
+    marginBottom: 6
   },
-  chatName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    flex: 1,
-  },
-  timeAndBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#666',
-    marginRight: 8,
-  },
+  chatName: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  timeAndBadge: { flexDirection: 'row', alignItems: 'center' },
+
+  timestamp: { fontSize: 12, color: '#666', marginRight: 8 },
+
   unreadBadge: {
     backgroundColor: '#2196F3',
     borderRadius: 12,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 6,
+    width: 10,
+    height: 10
   },
-  unreadCount: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+
   messageContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    justifyContent: 'space-between'
   },
-  lastMessage: {
-    fontSize: 14,
-    color: '#666',
-    flex: 1,
-    lineHeight: 18,
-  },
-  patientBadge: {
+  lastMessage: { fontSize: 14, color: '#666', flex: 1 },
+
+  doctorBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E3F2FD',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
-    marginLeft: 10,
+    marginLeft: 10
   },
-  patientBadgeText: {
+  doctorBadgeText: {
     fontSize: 10,
     color: '#2196F3',
     fontWeight: 'bold',
-    marginLeft: 3,
+    marginLeft: 3
   },
+
+  /* --- Empty State --- */
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 50,
+    paddingVertical: 50
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 20,
-    marginBottom: 10,
-  },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   emptySubtitle: {
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 20,
-  },
+    paddingHorizontal: 20
+  }
 });
-

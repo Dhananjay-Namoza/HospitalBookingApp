@@ -27,12 +27,13 @@ export default function DoctorDetailScreen() {
 
   const loadDoctorData = async () => {
   try {
+    console.log('Loading doctor data for ID:', doctorId);
     setLoading(true);
     const [doctorResponse, reviewsResponse] = await Promise.all([
-      ApiService.getDoctorById(parseInt(doctorId as string)),
+      ApiService.getDoctorById(doctorId),
       // Reviews can be fetched if API endpoint exists
     ]);
-    
+    console.log('Doctor response:', doctorResponse);
     if (doctorResponse.success && doctorResponse.doctor) {
       setDoctor(doctorResponse.doctor);
     }
@@ -66,37 +67,26 @@ export default function DoctorDetailScreen() {
   const renderAboutTab = () => (
     <View style={styles.tabContent}>
       <Text style={styles.sectionTitle}>About</Text>
-      <Text style={styles.aboutText}>{doctor?.about}</Text>
+      <Text style={styles.aboutText}>
+        {doctor?.name} is a highly skilled {doctor?.speciality} with over {doctor?.experience} years of experience. They are known for their compassionate care and dedication to patient well-being.
+        </Text>
       
       <Text style={styles.sectionTitle}>Qualifications</Text>
       <View style={styles.qualificationsList}>
-        {doctor?.qualifications?.map((qualification, index) => (
-          <View key={index} style={styles.qualificationItem}>
+          <View style={styles.qualificationItem}>
             <Ionicons name="school-outline" size={16} color="#2196F3" />
-            <Text style={styles.qualificationText}>{qualification}</Text>
+            <Text style={styles.qualificationText}>{doctor?.qualification}</Text>
           </View>
-        ))}
       </View>
 
-      <Text style={styles.sectionTitle}>Languages</Text>
-      <View style={styles.languagesList}>
-        {doctor?.languages?.map((language, index) => (
-          <View key={index} style={styles.languageChip}>
-            <Text style={styles.languageText}>{language}</Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={styles.sectionTitle}>Awards & Recognition</Text>
+      <Text style={styles.sectionTitle}>Designation & Speciality</Text>
       <View style={styles.awardsList}>
-        {doctor?.awards?.map((award, index) => (
-          <View key={index} style={styles.awardItem}>
-            <Ionicons name="trophy-outline" size={16} color="#FFD700" />
-            <Text style={styles.awardText}>{award}</Text>
+           <View style={styles.qualificationItem}>
+            <Ionicons name="medal-outline" size={16} color="#2196F3" />
+            <Text style={styles.awardText}>{doctor?.designation} - {doctor?.speciality}</Text>
+            </View>
           </View>
-        ))}
       </View>
-    </View>
   );
 
   const renderReviewsTab = () => (
@@ -144,7 +134,7 @@ export default function DoctorDetailScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Doctor Header */}
         <View style={styles.doctorHeader}>
-          <Image source={{ uri: doctor.image }} style={styles.doctorImage} />
+          <Image source={{ uri: doctor.image|| 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face' }} style={styles.doctorImage} />
           <View style={styles.doctorInfo}>
             <Text style={styles.doctorName}>{doctor.name}</Text>
             <Text style={styles.doctorSpeciality}>{doctor.speciality}</Text>
@@ -176,7 +166,7 @@ export default function DoctorDetailScreen() {
           <View style={styles.feeInfo}>
             <Ionicons name="card-outline" size={24} color="#2196F3" />
             <View style={styles.feeText}>
-              <Text style={styles.feeAmount}>₹{doctor.consultationFee}</Text>
+              <Text style={styles.feeAmount}>₹{doctor.availability.consultationFee}</Text>
               <Text style={styles.feeLabel}>Consultation Fee</Text>
             </View>
           </View>

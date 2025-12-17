@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { getFileUrl } from '../../api/files';
 
 interface MessageBubbleProps {
   message: any;
@@ -99,8 +100,16 @@ export default function MessageBubble({
   const renderContent = () => {
     // Image message
     if (message.messageType === 'image') {
-      const imageUri = message.file?.fileUrl || message.imageUri || message.imageUrl;
-      
+      let imageUri = message.imageUri || message.imageUrl;
+
+if (message.file?.fileUrl) {
+  imageUri = getFileUrl(message.file.fileUrl);
+}
+
+// Normalize any leftover relative paths
+if (imageUri && !imageUri.startsWith('http') && !imageUri.startsWith('file://')) {
+  imageUri = getFileUrl(imageUri);
+}
       return (
         <View>
           {imageUri ? (

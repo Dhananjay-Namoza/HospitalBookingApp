@@ -32,10 +32,11 @@ export const API_ENDPOINTS = {
   // Chat endpoints
   CHATS: {
     LIST: `${API_BASE_URL}/chats`,
-    CREATE: `${API_BASE_URL}/chats`,
+    CREATE: `${API_BASE_URL}/chats/create`,
     MESSAGES: (id: number) => `${API_BASE_URL}/chats/${id}/messages`,
     SEND_MESSAGE: (id: number) => `${API_BASE_URL}/chats/${id}/messages`,
     MARK_READ: (id: number) => `${API_BASE_URL}/chats/${id}/read`,
+    FILE_UPLOAD: `${API_BASE_URL}/chats/files/upload`,
   },
   
   // Patient endpoints

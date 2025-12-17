@@ -1,4 +1,4 @@
-import React, { useState,useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,19 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Switch
+  Switch,
+  ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUser } from '../../../context/UserContext';
 import ApiService from '../../../services/api.service';
+
+const RECEPTION_USER_ID = 201;
+
 export default function DoctorProfileScreen() {
   const { user, setUser, logout } = useUser();
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
@@ -29,53 +34,111 @@ export default function DoctorProfileScreen() {
   const [availableForConsultation, setAvailableForConsultation] = useState(true);
   const [acceptNewPatients, setAcceptNewPatients] = useState(true);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const showError = (message: string) => {
-    Alert.alert('Error', message);
-  };
-  const success = (message: string) => {
-    Alert.alert('Success', message);
-  };
-  const handleSave = async () => {
-  try {
-    setLoading(true);
-    const updates = {
-      name: formData.name,
-      phone: formData.phone,
-      speciality: formData.speciality,
-      experience: parseInt(formData.experience),
-      qualification: formData.qualification,
-      hospitalName: formData.hospitalName,
-      address: formData.address,
-    };
 
-    const response = await ApiService.updateProfile(updates);
-    
-    if (response.success) {
-      setUser(response.user);
-      setEditing(false);
-      success('Profile updated successfully!');
-    }
-  } catch (err) {
-    showError('Failed to update profile');
-  } finally {
-    setLoading(false);
-  }
-};
   useEffect(() => {
-  loadProfile();
-}, []);
-const loadProfile = async () => {
-  try {
-    const response = await ApiService.getProfile();
-    if (response.success && response.user) {
-      setUser(response.user);
-      // Update form data
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      const response = await ApiService.getProfile();
+      if (response.success && response.user) {
+        setUser(response.user);
+        setFormData({
+          name: response.user.name || '',
+          email: response.user.email || '',
+          phone: response.user.phone || '',
+          speciality: response.user.speciality || '',
+          experience: response.user.experience?.toString() || '',
+          qualification: response.user.qualification || '',
+          hospitalName: response.user.hospitalName || '',
+          address: response.user.address || '',
+        });
+      }
+    } catch (err) {
+      console.error('Error loading profile:', err);
     }
-  } catch (err) {
-    console.error('Error loading profile:', err);
-  }
-};
+  };
+
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      const updates = {
+        name: formData.name,
+        phone: formData.phone,
+        speciality: formData.speciality,
+        experience: parseInt(formData.experience) || 0,
+        qualification: formData.qualification,
+        hospitalName: formData.hospitalName,
+        address: formData.address,
+      };
+
+      const response = await ApiService.updateProfile(updates);
+      
+      if (response.success) {
+        setUser(response.user);
+        setEditing(false);
+        Alert.alert('Success', 'Profile updated successfully!');
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContactReception = async () => {
+    try {
+      setLoading(true);
+      
+      // Check if chat with reception already exists
+      const chatsResponse = await ApiService.getChats();
+      
+      if (chatsResponse.success && chatsResponse.chats) {
+        const receptionChat = chatsResponse.chats.find(
+          (chat: any) => chat.otherUser?._id === RECEPTION_USER_ID || 
+                         chat.otherUser?.id === RECEPTION_USER_ID
+        );
+        
+        if (receptionChat) {
+          router.push({
+            pathname: '/(doctor)/chat/[id]',
+            params: { 
+              id: receptionChat.chatId,
+              chat: JSON.stringify(receptionChat),
+              type: 'reception'
+            }
+          });
+          return;
+        }
+      }
+      
+      // Create new chat with reception
+      const createResponse = await ApiService.createChat({
+        otherUserId: RECEPTION_USER_ID,
+      });
+      
+      if (createResponse.success && createResponse.chat) {
+        router.push({
+          pathname: '/(doctor)/chat/[id]',
+          params: { 
+            id: createResponse.chat._id.toString() || createResponse.chat.id,
+            chat: JSON.stringify(createResponse.chat),
+            type: 'reception'
+          }
+        });
+      } else {
+        throw new Error('Failed to create chat with reception');
+      }
+      
+    } catch (error: any) {
+      console.error('Error contacting reception:', error);
+      Alert.alert('Error', error.message || 'Failed to contact reception');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -138,6 +201,19 @@ const loadProfile = async () => {
           <Ionicons name="medical" size={14} color="#2196F3" />
           <Text style={styles.doctorText}>Verified Doctor</Text>
         </View>
+      </View>
+
+      {/* Contact Reception Button */}
+      <View style={styles.contactReceptionContainer}>
+        <TouchableOpacity 
+          style={styles.contactReceptionButton}
+          onPress={handleContactReception}
+          disabled={loading}
+        >
+          <Ionicons name="chatbubble-ellipses" size={20} color="#2196F3" />
+          <Text style={styles.contactReceptionText}>Contact Reception</Text>
+          {loading && <ActivityIndicator size="small" color="#2196F3" style={styles.loadingIcon} />}
+        </TouchableOpacity>
       </View>
 
       {/* Professional Information */}
@@ -278,7 +354,6 @@ const loadProfile = async () => {
               style={[styles.button, styles.cancelButton]}
               onPress={() => {
                 setEditing(false);
-                // Reset form data
                 setFormData({
                   name: user?.name || '',
                   email: user?.email || '',
@@ -381,6 +456,30 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     fontWeight: 'bold',
     marginLeft: 4,
+  },
+  contactReceptionContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  contactReceptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 1,
+  },
+  contactReceptionText: {
+    color: '#2196F3',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  loadingIcon: {
+    marginLeft: 8,
   },
   section: {
     backgroundColor: '#fff',

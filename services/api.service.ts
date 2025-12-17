@@ -174,7 +174,7 @@ class ApiService {
     });
   }
 
-  async getChatMessages(chatId: number) {
+  async getChatMessages(chatId: string) {
     return this.request(API_ENDPOINTS.CHATS.MESSAGES(chatId), {
       method: 'GET',
     });

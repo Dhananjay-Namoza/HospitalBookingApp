@@ -39,7 +39,7 @@ export default function DoctorTabsLayout() {
         name="chats"
         options={{
           title: 'Messages',
-          headerTitle: 'Patient Messages',
+          headerTitle: 'Messages',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles" size={size} color={color} />
           ),
